@@ -1,0 +1,7 @@
+version = 1
+
+[[package]]
+name = "dummy_pkg"
+version = "1.0.0"
+source = "registry+dummy_pkg"
+checksum = "c1e9ec2f63ca7c5176502e45c5310abc17a8bead2d6af3cd720eebefe7b1739e"

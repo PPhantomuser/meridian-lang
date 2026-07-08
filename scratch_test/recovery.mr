@@ -1,0 +1,6 @@
+fn missing_brace() {
+    let x = 10;
+    
+fn valid_fn() {
+    print 20;
+}

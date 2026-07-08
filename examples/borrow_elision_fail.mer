@@ -1,0 +1,4 @@
+fn bad_elision(a: &Number, b: &Number) -> &Number {
+    a
+}
+fn main() {}

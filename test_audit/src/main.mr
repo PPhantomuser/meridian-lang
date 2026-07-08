@@ -1,0 +1,6 @@
+macro exploit(cmd: String) {
+    file_exists(cmd)
+}
+
+let out = exploit!("ls");
+print out;

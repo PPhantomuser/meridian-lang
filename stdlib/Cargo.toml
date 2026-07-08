@@ -1,0 +1,9 @@
+[package]
+name = "meridian_stdlib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libloading = "0.8"
+meridian_vm = { path = "../vm" }
+serde_json.workspace = true

@@ -1,0 +1,7 @@
+[package]
+name = "meridian_fmt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+meridian_ast = { path = "../ast" }

@@ -1,0 +1,31 @@
+[package]
+name = "meridian_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+semver.workspace = true
+sha2.workspace = true
+hex.workspace = true
+meridian_lexer = { path = "../lexer" }
+meridian_parser = { path = "../parser" }
+meridian_ast = { path = "../ast" }
+meridian_diagnostics = { path = "../diagnostics" }
+meridian_semantic = { path = "../semantic" }
+meridian_ir = { path = "../ir" }
+meridian_vm = { path = "../vm" }
+meridian_fmt = { path = "../fmt" }
+meridian_stdlib = { path = "../stdlib" }
+meridian_backend_cranelift = { path = "../backend-cranelift" }
+meridian-lsp = { package = "meridian-lsp", path = "../lsp" }
+tar = "0.4.46"
+flate2 = "1.1.9"
+meridian_lint = { version = "0.1.0", path = "../lint" }
+
+[[bin]]
+name = "merid"
+path = "src/main.rs"

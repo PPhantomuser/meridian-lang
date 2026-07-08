@@ -1,0 +1,5 @@
+import "dummy_pkg";
+
+fn main() {
+    hello();
+}

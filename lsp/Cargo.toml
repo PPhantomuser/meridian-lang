@@ -1,0 +1,17 @@
+[package]
+name = "meridian-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "meridian_lsp"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+meridian_lexer = { path = "../lexer" }
+meridian_parser = { path = "../parser" }
+meridian_ast = { path = "../ast" }
+meridian_semantic = { path = "../semantic" }
+meridian_diagnostics = { path = "../diagnostics" }

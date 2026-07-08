@@ -1,0 +1,20 @@
+#[test]
+fn test_hashmap() {
+    let map = hashmap_new();
+    hashmap_insert(map, "key1", 42);
+    let val = hashmap_get(map, "key1");
+}
+
+#[test]
+fn test_hashset() {
+    let set = hashset_new();
+    hashset_insert(set, "hello");
+    let has = hashset_contains(set, "hello");
+}
+
+#[test]
+fn test_vecdeque() {
+    let deque = vecdeque_new();
+    vecdeque_push_back(deque, 100);
+    let v = vecdeque_pop_front(deque);
+}

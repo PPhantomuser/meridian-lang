@@ -1,0 +1,12 @@
+fn fib(n: Number) -> Number {
+    if n == 0 {
+        0
+    } else if n == 1 {
+        1
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+let result = fib(10);
+print result;

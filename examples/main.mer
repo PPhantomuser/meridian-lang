@@ -1,0 +1,4 @@
+import "math.mer";
+
+let result = add(10, 20);
+print result;

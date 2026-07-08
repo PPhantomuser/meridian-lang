@@ -1,0 +1,14 @@
+let lib = dlopen("./scratch_test/libtest_ffi.dylib");
+
+let add_fn = dlsym(lib, "add_c", "f64,f64->f64");
+let args1 = vecdeque_new();
+vecdeque_push_back(args1, 10.5);
+vecdeque_push_back(args1, 20.0);
+let result1 = dlcall(add_fn, args1);
+print result1;
+
+let echo_fn = dlsym(lib, "echo_c", "string->string");
+let args2 = vecdeque_new();
+vecdeque_push_back(args2, "Meridian FFI");
+let result2 = dlcall(echo_fn, args2);
+print result2;

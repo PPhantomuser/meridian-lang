@@ -1,0 +1,8 @@
+[package]
+name = "meridian_ir"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+meridian_semantic = { path = "../semantic" }
+meridian_ast = { path = "../ast" }

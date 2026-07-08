@@ -1,0 +1,7 @@
+fn unused() {
+    let x = 10;
+    while true {
+        break;
+        print x;
+    }
+}

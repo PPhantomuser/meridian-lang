@@ -1,0 +1,7 @@
+version = 1
+
+[[package]]
+name = "remote_pkg"
+version = "0.0.0"
+source = "git+https://github.com/torvalds/test-tlb#master"
+checksum = "01efac9b588f6c047d19e0e7063e2b501ca3b738b3aa1a2543e705c100504bc9"

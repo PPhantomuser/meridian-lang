@@ -1,0 +1,2 @@
+let msg = "Hello, Meridian v1!";
+print msg;

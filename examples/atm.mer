@@ -1,0 +1,59 @@
+// Paste the Gemini ATM code here!
+// 1. We define a helper function to show the account info (simulating the inherited data).
+// It returns a Bool because all functions must return a value, and we use implicit returns.
+fn display_account(acc_id: Number, acc_balance: Number) -> Bool {
+    print "--- Collaborated Account Data ---";
+    print acc_id;
+    print acc_balance;
+    true
+}
+
+// 2. We use recursion instead of loops to handle the 3 PIN attempts.
+// We pass the guesses as arguments since runtime standard input isn't in v1 yet.
+fn atm_login_recursive(attempts_left: Number, correct_pin: Number, g1: Number, g2: Number, g3: Number, acc_id: Number, acc_balance: Number) -> Bool {
+    
+    // Expression-based control flow: Every if MUST have an else that returns the same type (Bool).
+    if attempts_left == 3 {
+        if g1 == correct_pin {
+            print "Attempt 1: Access Granted!";
+            display_account(acc_id, acc_balance)
+        } else {
+            print "Attempt 1 Failed.";
+            let next_attempts: Number = attempts_left - 1;
+            atm_login_recursive(next_attempts, correct_pin, g1, g2, g3, acc_id, acc_balance)
+        }
+    } else if attempts_left == 2 {
+        if g2 == correct_pin {
+            print "Attempt 2: Access Granted!";
+            display_account(acc_id, acc_balance)
+        } else {
+            print "Attempt 2 Failed.";
+            let next_attempts: Number = attempts_left - 1;
+            atm_login_recursive(next_attempts, correct_pin, g1, g2, g3, acc_id, acc_balance)
+        }
+    } else if attempts_left == 1 {
+        if g3 == correct_pin {
+            print "Attempt 3: Access Granted!";
+            display_account(acc_id, acc_balance)
+        } else {
+            print "Account Locked. Too many failed attempts.";
+            false
+        }
+    } else {
+        false
+    }
+}
+
+// 3. Execution / Main logic
+// Variables require explicit type annotations.
+let actual_pin: Number = 8080;
+let inherited_acc_id: Number = 987654321;
+let inherited_balance: Number = 50000;
+
+// Simulating the user guessing incorrectly twice, then getting it right on the 3rd try.
+let user_guess_1: Number = 1111;
+let user_guess_2: Number = 2222;
+let user_guess_3: Number = 8080;
+
+// Triggering the recursive ATM loop.
+let session_active: Bool = atm_login_recursive(3, actual_pin, user_guess_1, user_guess_2, user_guess_3, inherited_acc_id, inherited_balance);

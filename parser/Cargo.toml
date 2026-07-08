@@ -1,0 +1,9 @@
+[package]
+name = "meridian_parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+meridian_ast = { path = "../ast" }
+meridian_lexer = { path = "../lexer" }
+meridian_diagnostics = { path = "../diagnostics" }

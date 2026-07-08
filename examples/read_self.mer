@@ -1,0 +1,2 @@
+let content = read_file("examples/read_self.mer");
+print content;

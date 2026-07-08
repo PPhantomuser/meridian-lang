@@ -1,0 +1,5 @@
+fn add(x: Number, y: Number) -> Number {
+    x + y
+}
+
+add(10);

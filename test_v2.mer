@@ -1,0 +1,18 @@
+/// Test V2.0 features
+fn main() -> () {
+    let mut x: Number = 0;
+    while x < 5 {
+        x = x + 1;
+        if x == 3 {
+            continue;
+        }
+        print x;
+    }
+
+    let mut sum = 0;
+    for i in 1..=5 {
+        sum = sum + i;
+    }
+    print sum;
+}
+main();

@@ -1,0 +1,6 @@
+[package]
+name = "test_audit"
+version = "0.1.0"
+
+[dependencies]
+"remote_pkg" = { git = "https://github.com/torvalds/test-tlb", rev = "master" }

@@ -1,0 +1,16 @@
+let listener = tcp_bind("127.0.0.1:8081");
+print "TCP Echo Server listening on 127.0.0.1:8081...";
+
+let stream = tcp_accept(listener);
+print "Accepted a connection!";
+
+let data = tcp_read(stream);
+print "Received data: ";
+print data;
+
+let success = tcp_write(stream, data);
+if success {
+    print "Successfully echoed data back.";
+}
+
+print "Shutting down server.";

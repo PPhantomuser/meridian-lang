@@ -1,0 +1,17 @@
+[package]
+name = "meridian_backend_cranelift"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cranelift-codegen = "0.108.2"
+cranelift-frontend = "0.108.2"
+cranelift-jit = "0.108.2"
+cranelift-module = "0.108.2"
+cranelift-native = "0.108.2"
+target-lexicon = "0.12.14"
+
+meridian_ast = { path = "../ast" }
+meridian_ir = { path = "../ir" }
+cranelift-object = "0.108.2"
+object = { version = "0.36.1", features = ["write"] }

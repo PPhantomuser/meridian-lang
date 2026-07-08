@@ -1,0 +1,18 @@
+async fn fetch_data(id: Number) -> Future<Number> {
+    print "Fetching...";
+    id * 10
+}
+
+fn main() {
+    let t1 = spawn fetch_data(1);
+    let t2 = spawn fetch_data(2);
+
+    let res1 = t1.await;
+    let res2 = t2.await;
+
+    print res1;
+    print res2;
+    print "Done!";
+}
+
+main();

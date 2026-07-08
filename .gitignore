@@ -1,0 +1,14 @@
+# Scratch and test files
+*.log
+out.txt
+sandbox*.mer
+temp*.mer
+test.mr
+test_macro.mr
+dummy_test.merid
+
+# OS generated files
+.DS_Store
+
+# Rust build artifacts
+target/

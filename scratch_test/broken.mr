@@ -1,0 +1,2 @@
+fn missing_brace() {
+    let x = ;

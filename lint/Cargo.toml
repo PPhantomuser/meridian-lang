@@ -1,0 +1,9 @@
+[package]
+name = "meridian_lint"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+meridian_ast = { path = "../ast" }
+meridian_diagnostics = { path = "../diagnostics" }
+meridian_semantic = { path = "../semantic" }
