@@ -1,18 +1,6 @@
 [workspace]
 members = [
-    "ast",
-    "cli",
-    "diagnostics",
-    "lexer",
-    "parser",
-    "semantic",
-    "ir",
-    "vm",
-    "runtime",
-    "stdlib",
-    "fmt",
-    "backend-cranelift",
-    "lsp", "lint",
+    "crates/*",
 ]
 resolver = "2"
 

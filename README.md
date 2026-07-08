@@ -1,35 +1,98 @@
-# Meridian Antigravity Delivery Pack
+<div align="center">
+  <h1>🏔️ Meridian</h1>
+  <p><strong>A compiled-first programming language designed for both human engineers and AI agents.</strong></p>
 
-This pack is the starter package to give Antigravity along with the Claude-generated Meridian master package.
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+  [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+  [![Version](https://img.shields.io/badge/version-v4.1.0-orange.svg)]()
+</div>
 
-## What to provide to Antigravity
+---
 
-Give Antigravity these items together:
+## ⚡ Why Meridian?
 
-- The original Claude master package PDF / source document.
-- All files inside `specs/` from this pack.
-- The `ANTIGRAVITY_FIRST_MISSION.md` file as the first mission prompt.
-- The `ANTIGRAVITY_USAGE_INSTRUCTIONS.md` file as the operating instructions.
+Meridian was born out of a desire for a language that combines the **ergonomics of Python** with the **memory safety guarantees of Rust**. It is a modern, statically-typed language featuring a lightning-fast tree-walking virtual machine for local development, and an AOT (Ahead-of-Time) compiler powered by Cranelift for production deployments.
 
-## Recommended workflow
+### ✨ Key Features
+* **Strict Type Safety:** Catch bugs at compile time.
+* **Dual Execution Modes:** Run fast in the VM, or compile to native machine code with Cranelift.
+* **Agentic by Design:** First-class language primitives designed for AI tool-calling and sandboxed execution.
+* **Zero Magic:** No invisible memory allocations. Predictable performance.
 
-1. Do **not** ask Antigravity to build the whole language in one go.
-2. First make Antigravity read all spec files and summarize v1 scope.
-3. Then run only the first mission.
-4. After each mission, review output manually.
-5. Keep the spec files as the source of truth.
-6. Update specs before starting the next large phase.
+---
 
-## Mission order
+## 💻 Code Example
 
-1. `ANTIGRAVITY_FIRST_MISSION.md`
-2. Parser + AST hardening mission
-3. Type checker mission
-4. MIR + VM mission
-5. Tooling mission
-6. LSP / diagnostics mission
-7. Cranelift backend mission
+Meridian syntax is designed to be clean, readable, and highly expressive.
 
-## Important principle
+```meridian
+// A simple async fetch example
+async fn fetch_data(id: Number) -> Future<Number> {
+    print "Fetching user data...";
+    return id * 10;
+}
 
-Meridian is a new language built from scratch in design and semantics, but its compiler/toolchain may be implemented in Rust first. That is expected and correct.
+let result = await fetch_data(5);
+print result;
+```
+
+---
+
+## 🏗️ Architecture & Crates
+
+The Meridian compiler is modular and written in 100% safe Rust. The core logic is split into several highly optimized crates located in the `crates/` directory:
+
+| Component | Description |
+|-----------|-------------|
+| `crates/lexer` | Transforms raw source code into a token stream. |
+| `crates/parser` | Builds the Abstract Syntax Tree (AST) using a recursive descent parser. |
+| `crates/semantic` | Performs strict type-checking and borrow checking. |
+| `crates/ir` | Lowers the AST into Meridian Intermediate Representation (MIR). |
+| `crates/vm` | A blazing-fast stack-based Virtual Machine for interpreting MIR. |
+| `crates/backend-cranelift`| Ahead-of-Time (AOT) compiler backend for native code generation. |
+
+> **Note on Languages Panel**: Because the entire compiler toolchain is written in Rust, GitHub correctly identifies this repository as a Rust project. Once you start pushing Meridian (`.mer`) applications, those repositories will be classified as Meridian!
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+You must have the Rust toolchain installed to build the Meridian compiler.
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Installation
+Clone the repository and build the CLI:
+```bash
+git clone https://github.com/PPhantomuser/meridian-lang.git
+cd meridian-lang
+cargo build --release
+```
+
+### Running Your First Script
+Create a file called `hello.mer`:
+```meridian
+print "Hello from Meridian!";
+```
+
+Run it using the Meridian CLI:
+```bash
+cargo run -p meridian_cli -- run hello.mer
+```
+
+---
+
+## 📖 Documentation
+
+Dive deeper into the architecture and design of Meridian by exploring the `docs/` folder:
+* [Meridian Language Guide](docs/MERIDIAN_LANGUAGE_GUIDE.md)
+* [Compiler Architecture](docs/compiler-architecture.md)
+* [Memory Model](docs/runtime-memory-model.md)
+
+---
+
+<div align="center">
+  <i>Built with ❤️ for the open-source community.</i>
+</div>
