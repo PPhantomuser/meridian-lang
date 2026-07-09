@@ -1,0 +1,30 @@
+enum Status {
+    Active,
+    Inactive,
+    Suspended,
+}
+
+enum Value {
+    Number(Number),
+    Text(String),
+}
+
+let status = Status::Active;
+
+match status {
+    Status::Active => { print "Status is Active"; }
+    Status::Inactive => { print "Status is Inactive"; }
+    Status::Suspended => { print "Status is Suspended"; }
+}
+
+let val1 = Value::Number(42.5);
+match val1 {
+    Value::Number(n) => {
+        print "Value is a number:";
+        print n;
+    }
+    Value::Text(t) => {
+        print "Value is text:";
+        print t;
+    }
+}

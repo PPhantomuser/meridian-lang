@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
     Number,
+    Int,
     String,
     Bool,
     Unit,
@@ -12,6 +13,12 @@ pub enum Type {
     Generic(String, Vec<Type>),
     Meta(String), // For macro metaparameters like "Expr"
     RawPointer(Box<Type>, bool), // (type, is_mut)
+    Native(String), // Opaque native handles (e.g. "HashMap")
+    Struct(String),
+    Enum(String),
+    Option(Box<Type>),
+    Result(Box<Type>, Box<Type>),
+    Array(Box<Type>),
     Unknown,
     Error,
 }
@@ -73,11 +80,52 @@ pub enum Stmt {
         functions: Vec<Stmt>, // Stmt::Function definitions without bodies
         span: Span,
     },
+    StructDef {
+        name: String,
+        fields: Vec<Parameter>,
+        span: Span,
+    },
+    EnumDef {
+        name: String,
+        variants: Vec<(String, Option<Type>)>,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Pattern {
+    CatchAll(Span),
+    Identifier(String, Span),
+    EnumVariant {
+        enum_name: String,
+        variant_name: String,
+        binding_name: Option<String>,
+        span: Span,
+    },
+    Number(f64, Span),
+    Int(i64, Span),
+    String(String, Span),
+    Bool(bool, Span),
+}
+
+impl Pattern {
+    pub fn span(&self) -> Span {
+        match self {
+            Pattern::CatchAll(span) => *span,
+            Pattern::Identifier(_, span) => *span,
+            Pattern::EnumVariant { span, .. } => *span,
+            Pattern::Number(_, span) => *span,
+            Pattern::Int(_, span) => *span,
+            Pattern::String(_, span) => *span,
+            Pattern::Bool(_, span) => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
     Number(f64, Span),
+    Int(i64, Span),
     String(String, Span),
     Bool(bool, Span),
     Identifier(String, Span),
@@ -112,6 +160,37 @@ pub enum Expr {
     Index {
         object: Box<Expr>,
         index: Box<Expr>,
+        span: Span,
+    },
+    FieldAccess {
+        object: Box<Expr>,
+        field_name: String,
+        span: Span,
+    },
+    FieldAssign {
+        object: Box<Expr>,
+        field_name: String,
+        value: Box<Expr>,
+        span: Span,
+    },
+    StructInit {
+        name: String,
+        fields: Vec<(String, Expr)>,
+        span: Span,
+    },
+    ArrayInit {
+        elements: Vec<Expr>,
+        span: Span,
+    },
+    Match {
+        value: Box<Expr>,
+        arms: Vec<(Pattern, Expr)>,
+        span: Span,
+    },
+    EnumInit {
+        enum_name: String,
+        variant_name: String,
+        value: Option<Box<Expr>>,
         span: Span,
     },
     Block(Vec<Stmt>, Span),
@@ -159,6 +238,7 @@ impl Expr {
     pub fn span(&self) -> Span {
         match self {
             Expr::Number(_, span) => *span,
+            Expr::Int(_, span) => *span,
             Expr::String(_, span) => *span,
             Expr::Bool(_, span) => *span,
             Expr::Identifier(_, span) => *span,
@@ -168,6 +248,12 @@ impl Expr {
             Expr::Call { span, .. } => *span,
             Expr::MethodCall { span, .. } => *span,
             Expr::Index { span, .. } => *span,
+            Expr::FieldAccess { span, .. } => *span,
+            Expr::FieldAssign { span, .. } => *span,
+            Expr::StructInit { span, .. } => *span,
+            Expr::ArrayInit { span, .. } => *span,
+            Expr::Match { span, .. } => *span,
+            Expr::EnumInit { span, .. } => *span,
             Expr::Block(_, span) => *span,
             Expr::Group(_, span) => *span,
             Expr::Range { span, .. } => *span,
@@ -222,6 +308,37 @@ impl Expr {
             Expr::Index { object, index, span } => Expr::Index {
                 object: Box::new(object.substitute(args)),
                 index: Box::new(index.substitute(args)),
+                span: *span,
+            },
+            Expr::FieldAccess { object, field_name, span } => Expr::FieldAccess {
+                object: Box::new(object.substitute(args)),
+                field_name: field_name.clone(),
+                span: *span,
+            },
+            Expr::FieldAssign { object, field_name, value, span } => Expr::FieldAssign {
+                object: Box::new(object.substitute(args)),
+                field_name: field_name.clone(),
+                value: Box::new(value.substitute(args)),
+                span: *span,
+            },
+            Expr::StructInit { name, fields, span } => Expr::StructInit {
+                name: name.clone(),
+                fields: fields.iter().map(|(k, v)| (k.clone(), v.substitute(args))).collect(),
+                span: *span,
+            },
+            Expr::ArrayInit { elements, span } => Expr::ArrayInit {
+                elements: elements.iter().map(|e| e.substitute(args)).collect(),
+                span: *span,
+            },
+            Expr::Match { value, arms, span } => Expr::Match {
+                value: Box::new(value.substitute(args)),
+                arms: arms.iter().map(|(p, e)| (p.clone(), e.substitute(args))).collect(),
+                span: *span,
+            },
+            Expr::EnumInit { enum_name, variant_name, value, span } => Expr::EnumInit {
+                enum_name: enum_name.clone(),
+                variant_name: variant_name.clone(),
+                value: value.as_ref().map(|v| Box::new(v.substitute(args))),
                 span: *span,
             },
             Expr::Block(stmts, span) => Expr::Block(stmts.iter().map(|s| s.substitute(args)).collect(), *span),

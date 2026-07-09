@@ -36,11 +36,25 @@ struct MacroDefinition {
     body: Expr,
 }
 
+#[derive(Clone)]
+struct StructSignature {
+    fields: HashMap<String, Type>,
+    span: Span,
+}
+
+#[derive(Clone)]
+struct EnumSignature {
+    variants: HashMap<String, Option<Type>>,
+    span: Span,
+}
+
 pub struct SemanticAnalyzer {
     pub diagnostics: Vec<Diagnostic>,
     scopes: Vec<HashMap<String, SymbolInfo>>,
     functions: HashMap<String, FunctionSignature>,
     macros: HashMap<String, MacroDefinition>,
+    structs: HashMap<String, StructSignature>,
+    enums: HashMap<String, EnumSignature>,
     current_function_return_type: Option<Type>,
     in_loop_depth: usize,
     macro_expansion_depth: usize,
@@ -55,6 +69,8 @@ impl SemanticAnalyzer {
             scopes: vec![HashMap::new()],
             functions: HashMap::new(),
             macros: HashMap::new(),
+            structs: HashMap::new(),
+            enums: HashMap::new(),
             current_function_return_type: None,
             in_loop_depth: 0,
             macro_expansion_depth: 0,
@@ -63,28 +79,28 @@ impl SemanticAnalyzer {
         };
         // Register standard library
         let native_funcs = vec![
-            ("read_file", vec![Type::String], Type::String),
+            ("read_file", vec![Type::String], Type::Result(Box::new(Type::String), Box::new(Type::String))),
             ("hashmap_new", vec![], Type::Unknown),
             ("hashmap_insert", vec![Type::Unknown, Type::String, Type::Unknown], Type::Unknown),
-            ("hashmap_get", vec![Type::Unknown, Type::String], Type::Unknown),
+            ("hashmap_get", vec![Type::Unknown, Type::String], Type::Option(Box::new(Type::Unknown))),
             ("hashset_new", vec![], Type::Unknown),
             ("hashset_insert", vec![Type::Unknown, Type::String], Type::Unknown),
             ("hashset_contains", vec![Type::Unknown, Type::String], Type::Bool),
             ("vecdeque_new", vec![], Type::Unknown),
             ("vecdeque_push_back", vec![Type::Unknown, Type::Unknown], Type::Unknown),
-            ("vecdeque_pop_front", vec![Type::Unknown], Type::Unknown),
-            ("tcp_bind", vec![Type::String], Type::Unknown),
-            ("tcp_accept", vec![Type::Unknown], Type::Unknown),
-            ("tcp_read", vec![Type::Unknown], Type::String),
-            ("tcp_write", vec![Type::Unknown, Type::String], Type::Bool),
-            ("file_write", vec![Type::String, Type::String], Type::Bool),
-            ("file_append", vec![Type::String, Type::String], Type::Bool),
-            ("file_delete", vec![Type::String], Type::Bool),
+            ("vecdeque_pop_front", vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
+            ("tcp_bind", vec![Type::String], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
+            ("tcp_accept", vec![Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
+            ("tcp_read", vec![Type::Unknown], Type::Result(Box::new(Type::String), Box::new(Type::String))),
+            ("tcp_write", vec![Type::Unknown, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
+            ("file_write", vec![Type::String, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
+            ("file_append", vec![Type::String, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
+            ("file_delete", vec![Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
             ("file_exists", vec![Type::String], Type::Bool),
-            ("process_output", vec![Type::String, Type::Unknown], Type::String),
-            ("dlopen", vec![Type::String], Type::Unknown),
-            ("dlsym", vec![Type::Unknown, Type::String, Type::String], Type::Unknown),
-            ("dlcall", vec![Type::Unknown, Type::Unknown], Type::Unknown),
+            ("process_output", vec![Type::String, Type::Unknown], Type::Result(Box::new(Type::String), Box::new(Type::String))),
+            ("dlopen", vec![Type::String], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
+            ("dlsym", vec![Type::Unknown, Type::String, Type::String], Type::Option(Box::new(Type::Unknown))),
+            ("dlcall", vec![Type::Unknown, Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
         ];
 
         for (name, params, ret) in native_funcs {
@@ -224,6 +240,20 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
+            } else if let Stmt::StructDef { name, fields, span } = stmt {
+                let mut field_map = HashMap::new();
+                for param in fields {
+                    field_map.insert(param.name.clone(), param.ty.clone());
+                }
+                self.structs.insert(name.clone(), StructSignature { fields: field_map, span: *span });
+                self.index.definitions.insert(name.clone(), *span);
+            } else if let Stmt::EnumDef { name, variants, span } = stmt {
+                let mut var_map = HashMap::new();
+                for (v_name, v_type) in variants {
+                    var_map.insert(v_name.clone(), v_type.clone());
+                }
+                self.enums.insert(name.clone(), EnumSignature { variants: var_map, span: *span });
+                self.index.definitions.insert(name.clone(), *span);
             }
         }
 
@@ -397,7 +427,9 @@ impl SemanticAnalyzer {
                 self.index.definitions.insert(name.clone(), *span);
             }
             Stmt::ExternBlock { .. } => {}
-            Stmt::Import(_, _) => {}
+            Stmt::Import(_, _) => {},
+            Stmt::StructDef { .. } => {},
+            Stmt::EnumDef { .. } => {},
         }
     }
 
@@ -826,11 +858,6 @@ impl SemanticAnalyzer {
                 }
                 Type::Unknown
             }
-            Expr::Index { object, index, span: _ } => {
-                self.analyze_expression(object);
-                self.analyze_expression(index);
-                Type::Unknown
-            }
             Expr::Error(_) => {
                 Type::Error
             },
@@ -855,6 +882,391 @@ impl SemanticAnalyzer {
                 self.exit_scope();
                 self.in_unsafe_block = prev_unsafe;
                 block_type
+            }
+            Expr::Int(_, _) => Type::Int,
+            Expr::FieldAccess { object, field_name, span } => {
+                let obj_ty = self.analyze_expression(object);
+                if let Type::Struct(name) = &obj_ty {
+                    if let Some(sig) = self.structs.get(name) {
+                        if let Some(ty) = sig.fields.get(field_name) {
+                            return ty.clone();
+                        }
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Field '{}' not found in struct '{}'", field_name, name),
+                            "MER0150".to_string(),
+                            *span,
+                            DiagnosticCategory::Type,
+                            None,
+                        ));
+                    }
+                } else if obj_ty != Type::Unknown && obj_ty != Type::Error {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Cannot access field '{}' on non-struct type {:?}", field_name, obj_ty),
+                        "MER0151".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+                Type::Unknown
+            }
+            Expr::FieldAssign { object, field_name, value, span } => {
+                let obj_ty = self.analyze_expression(object);
+                let val_ty = self.analyze_expression(value);
+                if let Type::Struct(name) = &obj_ty {
+                    if let Some(sig) = self.structs.get(name) {
+                        if let Some(expected_ty) = sig.fields.get(field_name) {
+                            if expected_ty != &val_ty && val_ty != Type::Unknown && val_ty != Type::Error {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Type mismatch: expected {:?}, found {:?}", expected_ty, val_ty),
+                                    "MER0152".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Type,
+                                    None,
+                                ));
+                            }
+                            return val_ty;
+                        }
+                    }
+                }
+                Type::Unknown
+            }
+            Expr::StructInit { name, fields, span } => {
+                if let Some(sig) = self.structs.get(name).cloned() {
+                    for (f_name, f_val) in fields {
+                        let val_ty = self.analyze_expression(f_val);
+                        if let Some(expected_ty) = sig.fields.get(f_name) {
+                            if expected_ty != &val_ty && val_ty != Type::Unknown && val_ty != Type::Error {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Type mismatch in field '{}': expected {:?}, found {:?}", f_name, expected_ty, val_ty),
+                                    "MER0153".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Type,
+                                    None,
+                                ));
+                            }
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Field '{}' not found in struct '{}'", f_name, name),
+                                "MER0154".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        }
+                    }
+                    Type::Struct(name.clone())
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Struct '{}' not found", name),
+                        "MER0155".to_string(),
+                        *span,
+                        DiagnosticCategory::Semantic,
+                        None,
+                    ));
+                    Type::Error
+                }
+            }
+            Expr::ArrayInit { elements, span } => {
+                let mut elem_ty = Type::Unknown;
+                for elem in elements {
+                    let ty = self.analyze_expression(elem);
+                    if elem_ty == Type::Unknown && ty != Type::Error {
+                        elem_ty = ty;
+                    } else if elem_ty != Type::Unknown && ty != Type::Error && ty != elem_ty {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Array elements have inconsistent types: {:?} and {:?}", elem_ty, ty),
+                            "MER0156".to_string(),
+                            *span,
+                            DiagnosticCategory::Type,
+                            None,
+                        ));
+                    }
+                }
+                Type::Array(Box::new(elem_ty))
+            }
+            Expr::Index { object, index, span } => {
+                let obj_ty = self.analyze_expression(object);
+                let idx_ty = self.analyze_expression(index);
+                if idx_ty != Type::Int && idx_ty != Type::Unknown && idx_ty != Type::Error {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Array index must be of type Int, found {:?}", idx_ty),
+                        "MER0157".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+                if let Type::Array(inner) = obj_ty {
+                    *inner
+                } else {
+                    Type::Unknown
+                }
+            }
+            Expr::Match { value, arms, span } => {
+                let val_ty = self.analyze_expression(value);
+                let mut return_type = Type::Unknown;
+                for (pat, expr) in arms {
+                    self.enter_scope();
+                    self.validate_pattern(pat, &val_ty);
+                    
+                    let ty = self.analyze_expression(expr);
+                    if return_type == Type::Unknown && ty != Type::Error {
+                        return_type = ty;
+                    } else if return_type != Type::Unknown && ty != Type::Error && return_type != ty {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Match arms have incompatible types: {:?} and {:?}", return_type, ty),
+                            "MER0159".to_string(),
+                            expr.span(),
+                            DiagnosticCategory::Type,
+                            None,
+                        ));
+                    }
+                    self.exit_scope();
+                }
+                return_type
+            }
+            Expr::EnumInit { enum_name, variant_name, value, span } => {
+                if let Some(enum_sig) = self.enums.get(enum_name).cloned() {
+                    if let Some(variant_ty) = enum_sig.variants.get(variant_name) {
+                        if let Some(expected_ty) = variant_ty {
+                            if let Some(val) = value {
+                                let val_ty = self.analyze_expression(val);
+                                if val_ty != *expected_ty && val_ty != Type::Error && val_ty != Type::Unknown {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        format!("Enum variant {}::{} expects type {:?}, but got {:?}", enum_name, variant_name, expected_ty, val_ty),
+                                        "MER0160".to_string(),
+                                        *span,
+                                        DiagnosticCategory::Type,
+                                        None,
+                                    ));
+                                }
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Enum variant {}::{} expects a value of type {:?}", enum_name, variant_name, expected_ty),
+                                    "MER0161".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Type,
+                                    None,
+                                ));
+                            }
+                        } else {
+                            if value.is_some() {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Enum variant {}::{} does not take a value", enum_name, variant_name),
+                                    "MER0162".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Type,
+                                    None,
+                                ));
+                            }
+                        }
+                        return Type::Enum(enum_name.clone());
+                    }
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Variant '{}' not found in enum '{}'", variant_name, enum_name),
+                        "MER0163".to_string(),
+                        *span,
+                        DiagnosticCategory::Semantic,
+                        None,
+                    ));
+                    return Type::Enum(enum_name.clone());
+                } else if enum_name == "Option" {
+                    if variant_name == "Some" {
+                        if let Some(val) = value {
+                            let val_ty = self.analyze_expression(val);
+                            return Type::Option(Box::new(val_ty));
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Option::Some expects a value".to_string(),
+                                "MER0164".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            return Type::Unknown;
+                        }
+                    } else if variant_name == "None" {
+                        if value.is_some() {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Option::None does not take a value".to_string(),
+                                "MER0165".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        }
+                        return Type::Unknown;
+                    }
+                } else if enum_name == "Result" {
+                    if variant_name == "Ok" {
+                        if let Some(val) = value {
+                            let val_ty = self.analyze_expression(val);
+                            return Type::Result(Box::new(val_ty), Box::new(Type::Unknown));
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Result::Ok expects a value".to_string(),
+                                "MER0164".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            return Type::Unknown;
+                        }
+                    } else if variant_name == "Err" {
+                        if let Some(val) = value {
+                            let val_ty = self.analyze_expression(val);
+                            return Type::Result(Box::new(Type::Unknown), Box::new(val_ty));
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Result::Err expects a value".to_string(),
+                                "MER0164".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            return Type::Unknown;
+                        }
+                    }
+                }
+
+                self.diagnostics.push(Diagnostic::new(
+                    format!("Enum '{}' not found", enum_name),
+                    "MER0166".to_string(),
+                    *span,
+                    DiagnosticCategory::Semantic,
+                    None,
+                ));
+                Type::Error
+            }
+        }
+    }
+
+    fn validate_pattern(&mut self, pat: &meridian_ast::Pattern, ty: &Type) {
+        use meridian_ast::Pattern;
+        match pat {
+            Pattern::CatchAll(_) => {},
+            Pattern::Identifier(name, span) => {
+                self.scopes.last_mut().unwrap().insert(name.clone(), SymbolInfo {
+                    ty: ty.clone(),
+                    mutable: false,
+                    span: *span,
+                    borrows: vec![],
+                });
+            },
+            Pattern::Number(_, span) => {
+                if *ty != Type::Number && *ty != Type::Unknown {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Pattern expected type {:?}, found Number", ty),
+                        "MER0167".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+            },
+            Pattern::Int(_, span) => {
+                if *ty != Type::Int && *ty != Type::Unknown {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Pattern expected type {:?}, found Int", ty),
+                        "MER0169".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+            },
+            Pattern::String(_, span) => {
+                if *ty != Type::String && *ty != Type::Unknown {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Pattern expected type {:?}, found String", ty),
+                        "MER0168".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+            },
+            Pattern::Bool(_, span) => {
+                if *ty != Type::Bool && *ty != Type::Unknown {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Pattern expected type {:?}, found Bool", ty),
+                        "MER0170".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+            },
+            Pattern::EnumVariant { enum_name, variant_name, binding_name, span } => {
+                // Check if the enum type matches the matched value's type
+                let mut payload_ty = Type::Unknown;
+                
+                match ty {
+                    Type::Enum(expected_enum) => {
+                        if expected_enum != enum_name {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Pattern expected enum '{}', found enum '{}'", expected_enum, enum_name),
+                                "MER0171".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        } else if let Some(sig) = self.enums.get(enum_name) {
+                            if let Some(Some(v_ty)) = sig.variants.get(variant_name) {
+                                payload_ty = v_ty.clone();
+                            }
+                        }
+                    }
+                    Type::Option(inner) => {
+                        if enum_name != "Option" {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Pattern expected Option, found enum '{}'", enum_name),
+                                "MER0171".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        } else if variant_name == "Some" {
+                            payload_ty = *inner.clone();
+                        }
+                    }
+                    Type::Result(ok_ty, err_ty) => {
+                        if enum_name != "Result" {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Pattern expected Result, found enum '{}'", enum_name),
+                                "MER0171".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        } else if variant_name == "Ok" {
+                            payload_ty = *ok_ty.clone();
+                        } else if variant_name == "Err" {
+                            payload_ty = *err_ty.clone();
+                        }
+                    }
+                    Type::Unknown | Type::Error => {}
+                    _ => {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Pattern expected enum '{}', found {:?}", enum_name, ty),
+                            "MER0172".to_string(),
+                            *span,
+                            DiagnosticCategory::Type,
+                            None,
+                        ));
+                    }
+                }
+                
+                // If there is a binding, assign it the type of the inner payload if any
+                if let Some(b_name) = binding_name {
+                    self.scopes.last_mut().unwrap().insert(b_name.clone(), SymbolInfo {
+                        ty: payload_ty,
+                        mutable: false,
+                        span: *span,
+                        borrows: vec![],
+                    });
+                }
             }
         }
     }

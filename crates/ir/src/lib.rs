@@ -29,11 +29,21 @@ pub enum Opcode {
     AsyncCall(Register, String, Register, usize), // dest, func, arg_start, count
     Await(Register, Register),         // dest, src_future
     Spawn(Register, Register),         // dest, src_future
+    MakeStruct(Register, String, Vec<String>, Register), // dest, struct_name, field_names, first_field_reg
+    FieldAccess(Register, Register, String), // dest, obj, field_name
+    FieldAssign(Register, String, Register), // obj, field_name, value (no dest)
+    MakeArray(Register, Register, usize), // dest, first_elem_reg, count
+    ArrayIndex(Register, Register, Register), // dest, obj, index
+    ArrayAssign(Register, Register, Register), // obj, index, value
+    MakeEnum(Register, String, String, Option<Register>), // dest, enum_name, variant_name, value_reg
+    CheckEnum(Register, Register, String), // dest (bool), obj, variant_name
+    ExtractEnum(Register, Register), // dest, obj (gets inner value)
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstValue {
     Number(f64),
+    Int(i64),
     String(String),
     Bool(bool),
 }
@@ -245,7 +255,7 @@ impl Compiler {
                     self.current_chunk.instructions.push(Opcode::Jump(start));
                 }
             }
-            Stmt::Function { .. } | Stmt::Import(_, _) | Stmt::ExternBlock { .. } => {}
+            Stmt::Function { .. } | Stmt::Import(_, _) | Stmt::ExternBlock { .. } | Stmt::StructDef { .. } | Stmt::EnumDef { .. } => {}
             Stmt::MacroDef { name, parameters, body, .. } => {
                 self.program_ir.macros.insert(name.clone(), (parameters.clone(), body.clone()));
             }
@@ -317,8 +327,176 @@ impl Compiler {
             Expr::MethodCall { .. } => {
                 unimplemented!("Method call IR generation")
             }
-            Expr::Index { .. } => {
-                unimplemented!("Index IR generation")
+            Expr::Int(n, _) => {
+                let dest = self.alloc_reg();
+                let const_idx = self.current_chunk.add_constant(ConstValue::Int(*n));
+                self.current_chunk.instructions.push(Opcode::LoadConst(dest, const_idx));
+                dest
+            }
+            Expr::EnumInit { enum_name, variant_name, value, .. } => {
+                let val_reg = if let Some(v) = value {
+                    Some(self.compile_expr(v))
+                } else {
+                    None
+                };
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), val_reg));
+                dest
+            }
+            Expr::Match { value, arms, .. } => {
+                let val_reg = self.compile_expr(value);
+                let dest = self.alloc_reg();
+                
+                let mut end_jumps = Vec::new();
+                
+                for (pat, expr) in arms {
+                    let old_locals = self.locals.clone();
+                    use meridian_ast::Pattern;
+                    match pat {
+                        Pattern::CatchAll(_) => {
+                            let res_reg = self.compile_expr(expr);
+                            self.current_chunk.instructions.push(Opcode::Move(dest, res_reg));
+                            let jmp_end = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::Jump(0));
+                            end_jumps.push(jmp_end);
+                            
+                            self.locals = old_locals;
+                            break; // CatchAll must be last semantically
+                        }
+                        Pattern::EnumVariant { enum_name, variant_name, binding_name, .. } => {
+                            let check_reg = self.alloc_reg();
+                            self.current_chunk.instructions.push(Opcode::CheckEnum(check_reg, val_reg, variant_name.clone()));
+                            
+                            let jmp_next = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
+                            
+                            if let Some(b_name) = binding_name {
+                                let bound_reg = self.alloc_reg();
+                                self.locals.insert(b_name.clone(), bound_reg);
+                                self.current_chunk.instructions.push(Opcode::ExtractEnum(bound_reg, val_reg));
+                            }
+                            
+                            let res_reg = self.compile_expr(expr);
+                            self.current_chunk.instructions.push(Opcode::Move(dest, res_reg));
+                            
+                            let jmp_end = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::Jump(0));
+                            end_jumps.push(jmp_end);
+                            
+                            let next_offset = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions[jmp_next] = Opcode::JumpIfFalse(check_reg, next_offset);
+                        }
+                        Pattern::Number(n, _) => {
+                            let num_reg = self.alloc_reg();
+                            let const_idx = self.current_chunk.add_constant(ConstValue::Number(*n));
+                            self.current_chunk.instructions.push(Opcode::LoadConst(num_reg, const_idx));
+                            
+                            let check_reg = self.alloc_reg();
+                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, num_reg));
+                            
+                            let jmp_next = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
+                            
+                            let res_reg = self.compile_expr(expr);
+                            self.current_chunk.instructions.push(Opcode::Move(dest, res_reg));
+                            
+                            let jmp_end = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::Jump(0));
+                            end_jumps.push(jmp_end);
+                            
+                            let next_offset = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions[jmp_next] = Opcode::JumpIfFalse(check_reg, next_offset);
+                        }
+                        Pattern::Int(n, _) => {
+                            let int_reg = self.alloc_reg();
+                            let const_idx = self.current_chunk.add_constant(ConstValue::Int(*n));
+                            self.current_chunk.instructions.push(Opcode::LoadConst(int_reg, const_idx));
+                            
+                            let check_reg = self.alloc_reg();
+                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, int_reg));
+                            
+                            let jmp_next = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
+                            
+                            let res_reg = self.compile_expr(expr);
+                            self.current_chunk.instructions.push(Opcode::Move(dest, res_reg));
+                            
+                            let jmp_end = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions.push(Opcode::Jump(0));
+                            end_jumps.push(jmp_end);
+                            
+                            let next_offset = self.current_chunk.instructions.len();
+                            self.current_chunk.instructions[jmp_next] = Opcode::JumpIfFalse(check_reg, next_offset);
+                        }
+                        _ => {
+                            unimplemented!("Pattern matching for other types in IR");
+                        }
+                    }
+                    self.locals = old_locals;
+                }
+                
+                let end_offset = self.current_chunk.instructions.len();
+                for jmp in end_jumps {
+                    self.current_chunk.instructions[jmp] = Opcode::Jump(end_offset);
+                }
+                
+                dest
+            }
+            Expr::Index { object, index, .. } => {
+                let obj_reg = self.compile_expr(object);
+                let index_reg = self.compile_expr(index);
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::ArrayIndex(dest, obj_reg, index_reg));
+                dest
+            }
+            Expr::StructInit { name, fields, .. } => {
+                let mut sorted_fields = fields.clone();
+                sorted_fields.sort_by(|a, b| a.0.cmp(&b.0));
+                
+                let mut field_regs = Vec::new();
+                let mut field_names = Vec::new();
+                for (fname, expr) in &sorted_fields {
+                    field_names.push(fname.clone());
+                    field_regs.push(self.compile_expr(expr));
+                }
+                
+                let first_field_reg = self.alloc_reg();
+                for (i, reg) in field_regs.iter().enumerate() {
+                    if i > 0 { self.alloc_reg(); }
+                    self.current_chunk.instructions.push(Opcode::Move(first_field_reg + i, *reg));
+                }
+                
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::MakeStruct(dest, name.clone(), field_names, first_field_reg));
+                dest
+            }
+            Expr::ArrayInit { elements, .. } => {
+                let mut elem_regs = Vec::new();
+                for expr in elements {
+                    elem_regs.push(self.compile_expr(expr));
+                }
+                
+                let first_elem_reg = self.alloc_reg();
+                for (i, reg) in elem_regs.iter().enumerate() {
+                    if i > 0 { self.alloc_reg(); }
+                    self.current_chunk.instructions.push(Opcode::Move(first_elem_reg + i, *reg));
+                }
+                
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::MakeArray(dest, first_elem_reg, elements.len()));
+                dest
+            }
+            Expr::FieldAccess { object, field_name, .. } => {
+                let obj_reg = self.compile_expr(object);
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::FieldAccess(dest, obj_reg, field_name.clone()));
+                dest
+            }
+            Expr::FieldAssign { object, field_name, value, .. } => {
+                let obj_reg = self.compile_expr(object);
+                let val_reg = self.compile_expr(value);
+                self.current_chunk.instructions.push(Opcode::FieldAssign(obj_reg, field_name.clone(), val_reg));
+                val_reg
             }
             Expr::If { condition, then_branch, else_branch, .. } => {
                 let cond_reg = self.compile_expr(condition);
@@ -352,8 +530,14 @@ impl Compiler {
                     let dest_reg = *self.locals.get(name).unwrap();
                     self.current_chunk.instructions.push(Opcode::Move(dest_reg, val_reg));
                     dest_reg
+                } else if let Expr::Index { object, index, .. } = &**target {
+                    let obj_reg = self.compile_expr(object);
+                    let idx_reg = self.compile_expr(index);
+                    let val_reg = self.compile_expr(value);
+                    self.current_chunk.instructions.push(Opcode::ArrayAssign(obj_reg, idx_reg, val_reg));
+                    val_reg
                 } else {
-                    unimplemented!("Can only assign to identifiers");
+                    unimplemented!("Can only assign to identifiers or array indices");
                 }
             }
             Expr::Block(statements, _) => {

@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque, HashSet};
 #[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
+    Int(i64),
     String(String),
     Bool(bool),
     Null,
@@ -11,12 +12,17 @@ pub enum Value {
     Reference(usize), // Index into the current task's registers
     Future(usize),    // TaskId
     NativeObject(std::sync::Arc<std::sync::Mutex<dyn std::any::Any + Send + Sync>>),
+    Struct(String, std::sync::Arc<std::sync::Mutex<HashMap<String, Value>>>),
+    Array(std::sync::Arc<std::sync::Mutex<Vec<Value>>>),
+    Enum(String, String, Option<Box<Value>>),
+    Error(String),
 }
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Number(a), Value::Number(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Null, Value::Null) => true,
@@ -24,6 +30,10 @@ impl PartialEq for Value {
             (Value::Reference(a), Value::Reference(b)) => a == b,
             (Value::Future(a), Value::Future(b)) => a == b,
             (Value::NativeObject(a), Value::NativeObject(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Struct(_, a), Value::Struct(_, b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Array(a), Value::Array(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Enum(e1, v1, val1), Value::Enum(e2, v2, val2)) => e1 == e2 && v1 == v2 && val1 == val2,
+            (Value::Error(a), Value::Error(b)) => a == b,
             _ => false,
         }
     }
@@ -50,7 +60,7 @@ struct Task {
     frames: Vec<CallFrame>,
     registers: Vec<Value>,
     result: Option<Value>,
-    waiting_on: Option<usize>,
+    waiting_on: Option<(usize, usize)>,
 }
 
 pub struct VM {
@@ -151,9 +161,10 @@ impl VM {
         while let Some(task_id) = self.ready_queue.pop_front() {
             let mut task = self.tasks.remove(&task_id).unwrap();
             
-            if let Some(wait_id) = task.waiting_on {
+            if let Some((wait_id, dest_reg)) = task.waiting_on {
                 let wait_task = self.tasks.get(&wait_id).unwrap();
-                if wait_task.result.is_some() {
+                if let Some(res) = &wait_task.result {
+                    task.registers[dest_reg] = res.clone();
                     task.waiting_on = None;
                 } else {
                     self.tasks.insert(task_id, task);
@@ -182,6 +193,7 @@ impl VM {
                             let c = &frame.chunk.constants[const_idx];
                             let val = match c {
                                 ConstValue::Number(n) => Value::Number(*n),
+                                ConstValue::Int(n) => Value::Int(*n),
                                 ConstValue::String(s) => Value::String(s.clone()),
                                 ConstValue::Bool(b) => Value::Bool(*b),
                             };
@@ -287,6 +299,7 @@ impl VM {
                         Opcode::Print(src) => {
                             match &task.registers[base + src] {
                                 Value::Number(n) => println!("{}", n),
+                                Value::Int(n) => println!("{}", n),
                                 Value::String(s) => println!("{}", s),
                                 Value::Bool(b) => println!("{}", b),
                                 Value::Null => println!("null"),
@@ -294,6 +307,17 @@ impl VM {
                                 Value::Reference(ptr) => println!("<reference to {}>", ptr),
                                 Value::Future(id) => println!("<Future task_id={}>", id),
                                 Value::NativeObject(_) => println!("<NativeObject>"),
+                                Value::Struct(name, _) => println!("<Struct {}>", name),
+                                Value::Array(_) => println!("<Array>"),
+                                Value::Enum(e_name, v_name, val) => {
+                                    if let Some(inner) = val {
+                                        // A simple placeholder print for enum values, e.g. Option::Some(<val>)
+                                        println!("{}::{}(...)", e_name, v_name);
+                                    } else {
+                                        println!("{}::{}", e_name, v_name);
+                                    }
+                                }
+                                Value::Error(e) => println!("<Error: {}>", e),
                             }
                         }
                         Opcode::Call(dest, ref name, arg_start, arg_count) => {
@@ -303,6 +327,12 @@ impl VM {
                                     args.push(task.registers[base + arg_start + j].clone());
                                 }
                                 let res = (self.native_functions[*func_id])(&args);
+                                if let Value::Error(msg) = &res {
+                                    return Err(RuntimeError {
+                                        message: msg.clone(),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
                                 task.registers[base + dest] = res;
                             } else if let Some((func_chunk, is_async, _)) = self.functions.get(name) {
                                 if *is_async {
@@ -356,9 +386,9 @@ impl VM {
                         Opcode::Return(_) => {
                             break;
                         }
-                        Opcode::Await(_dest, src_future) => {
+                        Opcode::Await(dest, src_future) => {
                             if let Value::Future(wait_id) = task.registers[base + src_future] {
-                                task.waiting_on = Some(wait_id);
+                                task.waiting_on = Some((wait_id, base + dest));
                                 task.frames.push(frame.clone()); // Save current frame
                                 yielded = true;
                                 break;
@@ -382,6 +412,140 @@ impl VM {
                             } else {
                                 return Err(RuntimeError {
                                     message: "Dereferencing a non-reference value".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
+                        Opcode::MakeStruct(dest, name, field_names, first_field_reg) => {
+                            let mut map = HashMap::new();
+                            for (i, fname) in field_names.iter().enumerate() {
+                                map.insert(fname.clone(), task.registers[base + first_field_reg + i].clone());
+                            }
+                            task.registers[base + dest] = Value::Struct(name.clone(), std::sync::Arc::new(std::sync::Mutex::new(map)));
+                        }
+                        Opcode::FieldAccess(dest, obj_reg, field_name) => {
+                            let obj_val = task.registers[base + obj_reg].clone();
+                            if let Value::Struct(_, map) = obj_val {
+                                let map = map.lock().unwrap();
+                                if let Some(val) = map.get(&field_name) {
+                                    task.registers[base + dest] = val.clone();
+                                } else {
+                                    return Err(RuntimeError {
+                                        message: format!("Struct missing field {}", field_name),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "FieldAccess on non-struct".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
+                        Opcode::FieldAssign(obj_reg, field_name, val_reg) => {
+                            let val = task.registers[base + val_reg].clone();
+                            let obj_val = task.registers[base + obj_reg].clone();
+                            if let Value::Struct(_, map) = obj_val {
+                                let mut map = map.lock().unwrap();
+                                map.insert(field_name.clone(), val);
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "FieldAssign on non-struct".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
+                        Opcode::MakeArray(dest, first_elem_reg, count) => {
+                            let mut elements = Vec::with_capacity(count);
+                            for i in 0..count {
+                                elements.push(task.registers[base + first_elem_reg + i].clone());
+                            }
+                            task.registers[base + dest] = Value::Array(std::sync::Arc::new(std::sync::Mutex::new(elements)));
+                        }
+                        Opcode::ArrayIndex(dest, obj_reg, index_reg) => {
+                            let obj_val = task.registers[base + obj_reg].clone();
+                            let index_val = task.registers[base + index_reg].clone();
+                            
+                            let idx = if let Value::Int(i) = index_val {
+                                i as usize
+                            } else if let Value::Number(f) = index_val {
+                                f as usize
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "Array index must be an Int or Number".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            };
+
+                            if let Value::Array(arr) = obj_val {
+                                let arr = arr.lock().unwrap();
+                                if idx < arr.len() {
+                                    task.registers[base + dest] = arr[idx].clone();
+                                } else {
+                                    return Err(RuntimeError {
+                                        message: format!("Array index out of bounds: {} >= {}", idx, arr.len()),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "ArrayIndex on non-array".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
+                        Opcode::ArrayAssign(obj_reg, index_reg, val_reg) => {
+                            let val = task.registers[base + val_reg].clone();
+                            let index_val = task.registers[base + index_reg].clone();
+                            
+                            let idx = if let Value::Int(i) = index_val {
+                                i as usize
+                            } else if let Value::Number(f) = index_val {
+                                f as usize
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "Array index must be an Int or Number".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            };
+
+                            let obj_val = task.registers[base + obj_reg].clone();
+                            if let Value::Array(arr) = obj_val {
+                                let mut arr = arr.lock().unwrap();
+                                if idx < arr.len() {
+                                    arr[idx] = val;
+                                } else {
+                                    return Err(RuntimeError {
+                                        message: format!("Array index out of bounds: {} >= {}", idx, arr.len()),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "ArrayAssign on non-array".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
+                        Opcode::MakeEnum(dest, enum_name, variant_name, val_reg) => {
+                            let val = val_reg.map(|r| Box::new(task.registers[base + r].clone()));
+                            task.registers[base + dest] = Value::Enum(enum_name, variant_name, val);
+                        }
+                        Opcode::CheckEnum(dest, obj_reg, variant_name) => {
+                            let obj = task.registers[base + obj_reg].clone();
+                            if let Value::Enum(_, v_name, _) = obj {
+                                task.registers[base + dest] = Value::Bool(v_name == variant_name);
+                            } else {
+                                task.registers[base + dest] = Value::Bool(false);
+                            }
+                        }
+                        Opcode::ExtractEnum(dest, obj_reg) => {
+                            let obj = task.registers[base + obj_reg].clone();
+                            if let Value::Enum(_, _, Some(val)) = obj {
+                                task.registers[base + dest] = *val;
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "ExtractEnum on invalid enum or variant without value".to_string(),
                                     stack_trace: self.generate_stack_trace(&task, &frame),
                                 });
                             }

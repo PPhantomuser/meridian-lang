@@ -130,12 +130,46 @@ impl Formatter {
                 self.push_indent();
                 self.output.push('}');
             }
+            Stmt::StructDef { name, fields, .. } => {
+                self.push_indent();
+                self.output.push_str(&format!("struct {} {{\n", name));
+                self.indent_level += 1;
+                for field in fields {
+                    self.push_indent();
+                    self.output.push_str(&field.name);
+                    self.output.push_str(": ");
+                    self.format_type(&field.ty);
+                    self.output.push_str(",\n");
+                }
+                self.indent_level -= 1;
+                self.push_indent();
+                self.output.push_str("}");
+            }
+            Stmt::EnumDef { name, variants, .. } => {
+                self.push_indent();
+                self.output.push_str(&format!("enum {} {{\n", name));
+                self.indent_level += 1;
+                for (variant_name, variant_type) in variants {
+                    self.push_indent();
+                    self.output.push_str(variant_name);
+                    if let Some(ty) = variant_type {
+                        self.output.push_str("(");
+                        self.format_type(ty);
+                        self.output.push_str(")");
+                    }
+                    self.output.push_str(",\n");
+                }
+                self.indent_level -= 1;
+                self.push_indent();
+                self.output.push_str("}");
+            }
         }
     }
 
     fn format_type(&mut self, ty: &Type) {
         match ty {
             Type::Number => self.output.push_str("Number"),
+            Type::Int => self.output.push_str("Int"),
             Type::String => self.output.push_str("String"),
             Type::Bool => self.output.push_str("Bool"),
             Type::Unit => self.output.push_str("()"),
@@ -178,12 +212,39 @@ impl Formatter {
                 }
                 self.format_type(inner);
             }
+            Type::Native(name) => {
+                self.output.push_str(name);
+            }
+            Type::Struct(name) => {
+                self.output.push_str(name);
+            }
+            Type::Array(inner) => {
+                self.output.push('[');
+                self.format_type(inner);
+                self.output.push(']');
+            }
+            Type::Enum(name) => {
+                self.output.push_str(name);
+            }
+            Type::Option(inner) => {
+                self.output.push_str("Option<");
+                self.format_type(inner);
+                self.output.push('>');
+            }
+            Type::Result(ok, err) => {
+                self.output.push_str("Result<");
+                self.format_type(ok);
+                self.output.push_str(", ");
+                self.format_type(err);
+                self.output.push('>');
+            }
         }
     }
 
     fn format_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Number(n, _) => self.output.push_str(&n.to_string()),
+            Expr::Int(n, _) => self.output.push_str(&n.to_string()),
             Expr::String(s, _) => self.output.push_str(&format!("\"{}\"", s)),
             Expr::Bool(b, _) => self.output.push_str(if *b { "true" } else { "false" }),
             Expr::Identifier(name, _) => self.output.push_str(name),
@@ -238,6 +299,41 @@ impl Formatter {
                 self.format_expr(object);
                 self.output.push('[');
                 self.format_expr(index);
+                self.output.push(']');
+            }
+            Expr::FieldAccess { object, field_name, .. } => {
+                self.format_expr(object);
+                self.output.push('.');
+                self.output.push_str(field_name);
+            }
+            Expr::FieldAssign { object, field_name, value, .. } => {
+                self.format_expr(object);
+                self.output.push('.');
+                self.output.push_str(field_name);
+                self.output.push_str(" = ");
+                self.format_expr(value);
+            }
+            Expr::StructInit { name, fields, .. } => {
+                self.output.push_str(name);
+                self.output.push_str(" { ");
+                for (i, (k, v)) in fields.iter().enumerate() {
+                    self.output.push_str(k);
+                    self.output.push_str(": ");
+                    self.format_expr(v);
+                    if i < fields.len() - 1 {
+                        self.output.push_str(", ");
+                    }
+                }
+                self.output.push_str(" }");
+            }
+            Expr::ArrayInit { elements, .. } => {
+                self.output.push('[');
+                for (i, e) in elements.iter().enumerate() {
+                    self.format_expr(e);
+                    if i < elements.len() - 1 {
+                        self.output.push_str(", ");
+                    }
+                }
                 self.output.push(']');
             }
             Expr::If { condition, then_branch, else_branch, .. } => {
@@ -331,6 +427,53 @@ impl Formatter {
                 }
                 self.output.push(')');
             }
+            Expr::Match { value, arms, .. } => {
+                self.output.push_str("match ");
+                self.format_expr(value);
+                self.output.push_str(" {\n");
+                self.indent_level += 1;
+                for (pat, expr) in arms {
+                    self.push_indent();
+                    self.format_pattern(pat);
+                    self.output.push_str(" => ");
+                    self.format_expr(expr);
+                    self.output.push_str(",\n");
+                }
+                self.indent_level -= 1;
+                self.push_indent();
+                self.output.push('}');
+            }
+            Expr::EnumInit { enum_name, variant_name, value, .. } => {
+                self.output.push_str(enum_name);
+                self.output.push_str("::");
+                self.output.push_str(variant_name);
+                if let Some(val) = value {
+                    self.output.push('(');
+                    self.format_expr(val);
+                    self.output.push(')');
+                }
+            }
+        }
+    }
+
+    fn format_pattern(&mut self, pat: &meridian_ast::Pattern) {
+        match pat {
+            meridian_ast::Pattern::CatchAll(_) => self.output.push('_'),
+            meridian_ast::Pattern::Identifier(name, _) => self.output.push_str(name),
+            meridian_ast::Pattern::EnumVariant { enum_name, variant_name, binding_name, .. } => {
+                self.output.push_str(enum_name);
+                self.output.push_str("::");
+                self.output.push_str(variant_name);
+                if let Some(b) = binding_name {
+                    self.output.push('(');
+                    self.output.push_str(b);
+                    self.output.push(')');
+                }
+            }
+            meridian_ast::Pattern::Number(n, _) => self.output.push_str(&n.to_string()),
+            meridian_ast::Pattern::Int(n, _) => self.output.push_str(&n.to_string()),
+            meridian_ast::Pattern::String(s, _) => self.output.push_str(&format!("\"{}\"", s)),
+            meridian_ast::Pattern::Bool(b, _) => self.output.push_str(if *b { "true" } else { "false" }),
         }
     }
 }

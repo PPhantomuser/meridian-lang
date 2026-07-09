@@ -67,7 +67,8 @@ impl<'a> Parser<'a> {
                 | TokenKind::Extern 
                 | TokenKind::Unsafe 
                 | TokenKind::Async 
-                | TokenKind::Spawn => {
+                | TokenKind::Spawn 
+                | TokenKind::Struct => {
                     return;
                 }
                 _ => {
@@ -125,8 +126,197 @@ impl<'a> Parser<'a> {
             TokenKind::Continue => self.parse_continue_statement(),
             TokenKind::Macro => self.parse_macro_declaration(),
             TokenKind::Extern => self.parse_extern_block(),
+            TokenKind::Struct => self.parse_struct_def(),
+            TokenKind::Enum => self.parse_enum_def(),
             _ => self.parse_expression_statement(),
         }
+    }
+
+    fn parse_struct_def(&mut self) -> Option<Stmt> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume struct
+
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(name) => name.clone(),
+            _ => {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected identifier after 'struct'".to_string(),
+                    "MER0080".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        };
+        self.advance(); // consume name
+
+        if self.current_token.kind != TokenKind::LBrace {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected '{' after struct name".to_string(),
+                "MER0081".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+            return None;
+        }
+        self.advance(); // consume {
+
+        let mut fields = Vec::new();
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let field_name = match &self.current_token.kind {
+                TokenKind::Identifier(name) => name.clone(),
+                _ => {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected field name".to_string(),
+                        "MER0082".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            };
+            let field_span = self.current_token.span;
+            self.advance(); // consume field name
+
+            if self.current_token.kind != TokenKind::Colon {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected ':' after field name".to_string(),
+                    "MER0083".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+            self.advance(); // consume :
+
+            let ty = self.parse_type_annotation()?;
+            fields.push(Parameter {
+                name: field_name,
+                ty,
+                span: field_span,
+            });
+
+            if self.current_token.kind == TokenKind::Comma {
+                self.advance();
+            } else if self.current_token.kind != TokenKind::RBrace {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected ',' or '}' after field".to_string(),
+                    "MER0084".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        }
+
+        let end_span = self.current_token.span;
+        if self.current_token.kind == TokenKind::RBrace {
+            self.advance(); // consume }
+        }
+
+        Some(Stmt::StructDef {
+            name,
+            fields,
+            span: Span::new(start_span.start, end_span.end),
+        })
+    }
+
+    fn parse_enum_def(&mut self) -> Option<Stmt> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume enum
+
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(name) => name.clone(),
+            _ => {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected identifier after 'enum'".to_string(),
+                    "MER0090".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        };
+        self.advance(); // consume name
+
+        if self.current_token.kind != TokenKind::LBrace {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected '{' after enum name".to_string(),
+                "MER0091".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+            return None;
+        }
+        self.advance(); // consume {
+
+        let mut variants = Vec::new();
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let variant_name = match &self.current_token.kind {
+                TokenKind::Identifier(name) => name.clone(),
+                _ => {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected enum variant name".to_string(),
+                        "MER0092".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            };
+            self.advance(); // consume variant name
+
+            let mut variant_type = None;
+            if self.current_token.kind == TokenKind::LParen {
+                self.advance(); // consume (
+                variant_type = Some(self.parse_type_annotation()?);
+                if self.current_token.kind != TokenKind::RParen {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ')' after enum variant type".to_string(),
+                        "MER0093".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+                self.advance(); // consume )
+            }
+
+            variants.push((variant_name, variant_type));
+
+            if self.current_token.kind == TokenKind::Comma {
+                self.advance();
+            } else if self.current_token.kind != TokenKind::RBrace {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected ',' or '}' after enum variant".to_string(),
+                    "MER0094".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        }
+
+        let end_span = self.current_token.span;
+        if self.current_token.kind == TokenKind::RBrace {
+            self.advance(); // consume }
+        }
+
+        Some(Stmt::EnumDef {
+            name,
+            variants,
+            span: Span::new(start_span.start, end_span.end),
+        })
     }
 
     fn parse_import_statement(&mut self) -> Option<Stmt> {
@@ -491,7 +681,7 @@ impl<'a> Parser<'a> {
         let start_span = self.current_token.span;
         self.advance(); // consume while
 
-        let condition = self.parse_expression(0)?;
+        let condition = self.parse_expression_impl(0, false)?;
         
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -545,7 +735,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // consume in
 
-        let iterable = self.parse_expression(0)?;
+        let iterable = self.parse_expression_impl(0, false)?;
 
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -716,9 +906,81 @@ impl<'a> Parser<'a> {
             TokenKind::Identifier(name) => {
                 let ty = match name.as_str() {
                     "Number" => { self.advance(); Type::Number },
+                    "Int" => { self.advance(); Type::Int },
                     "String" => { self.advance(); Type::String },
                     "Bool" => { self.advance(); Type::Bool },
                     "Unit" => { self.advance(); Type::Unit },
+                    "Option" => {
+                        self.advance(); // consume Option
+                        if self.current_token.kind == TokenKind::LessThan {
+                            self.advance(); // consume <
+                            let inner = self.parse_type_annotation()?;
+                            if self.current_token.kind == TokenKind::GreaterThan {
+                                self.advance(); // consume >
+                                return Some(Type::Option(Box::new(inner)));
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected '>' after Option type".to_string(),
+                                    "MER0042".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected '<' after Option type".to_string(),
+                                "MER0043".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    }
+                    "Result" => {
+                        self.advance(); // consume Result
+                        if self.current_token.kind == TokenKind::LessThan {
+                            self.advance(); // consume <
+                            let ok = self.parse_type_annotation()?;
+                            if self.current_token.kind != TokenKind::Comma {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected ',' in Result type".to_string(),
+                                    "MER0044".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                            self.advance(); // consume ,
+                            let err = self.parse_type_annotation()?;
+                            
+                            if self.current_token.kind == TokenKind::GreaterThan {
+                                self.advance(); // consume >
+                                return Some(Type::Result(Box::new(ok), Box::new(err)));
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected '>' after Result type".to_string(),
+                                    "MER0045".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected '<' after Result type".to_string(),
+                                "MER0046".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    }
                     "Future" => {
                         self.advance(); // consume "Future"
                         if self.current_token.kind == TokenKind::LessThan {
@@ -783,8 +1045,8 @@ impl<'a> Parser<'a> {
                                 return None;
                             }
                         } else {
-                            // Non-generic named type
-                            return Some(Type::Generic(name.clone(), vec![]));
+                            // Non-generic named type (struct)
+                            return Some(Type::Struct(name.clone()));
                         }
                     }
                 };
@@ -799,6 +1061,23 @@ impl<'a> Parser<'a> {
                     self.diagnostics.push(Diagnostic::new(
                         "Expected ')' after '(' for Unit type".to_string(),
                         "MER0037".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    None
+                }
+            }
+            TokenKind::LBracket => {
+                self.advance(); // consume [
+                let inner_ty = self.parse_type_annotation()?;
+                if self.current_token.kind == TokenKind::RBracket {
+                    self.advance(); // consume ]
+                    Some(Type::Array(Box::new(inner_ty)))
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ']' after array type".to_string(),
+                        "MER0038".to_string(),
                         self.current_token.span,
                         DiagnosticCategory::Syntax,
                         None,
@@ -842,6 +1121,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self, precedence: u8) -> Option<Expr> {
+        self.parse_expression_impl(precedence, true)
+    }
+
+    fn parse_expression_impl(&mut self, precedence: u8, allow_struct: bool) -> Option<Expr> {
         let mut left = match self.current_token.kind {
             TokenKind::Ampersand => {
                 let start_span = self.current_token.span;
@@ -932,6 +1215,15 @@ impl<'a> Parser<'a> {
                 self.advance();
                 expr
             }
+            TokenKind::Int(n) => {
+                let expr = Expr::Int(n, self.current_token.span);
+                self.advance();
+                expr
+            }
+            TokenKind::Match => {
+                let expr = self.parse_match_expression()?;
+                expr
+            }
             TokenKind::String(ref s) => {
                 let expr = Expr::String(s.clone(), self.current_token.span);
                 self.advance();
@@ -1020,6 +1312,105 @@ impl<'a> Parser<'a> {
                         arguments,
                         span: Span::new(start_span.start, end_span.end),
                     }
+                } else if self.current_token.kind == TokenKind::Colon && self.peek_token.kind == TokenKind::Colon {
+                    self.advance(); // consume :
+                    self.advance(); // consume :
+                    
+                    let variant_name = match &self.current_token.kind {
+                        TokenKind::Identifier(n) => n.clone(),
+                        _ => {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected variant name after '::'".to_string(),
+                                "MER0095".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    };
+                    self.advance(); // consume variant name
+                    
+                    let mut value = None;
+                    if self.current_token.kind == TokenKind::LParen {
+                        self.advance(); // consume (
+                        value = Some(Box::new(self.parse_expression(0)?));
+                        if self.current_token.kind != TokenKind::RParen {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected ')' after enum variant value".to_string(),
+                                "MER0096".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                        self.advance(); // consume )
+                    }
+                    let end_span = self.current_token.span; // well, previous token's span is better, but close enough
+                    
+                    Expr::EnumInit {
+                        enum_name: name,
+                        variant_name,
+                        value,
+                        span: Span::new(start_span.start, end_span.end),
+                    }
+                } else if allow_struct && self.current_token.kind == TokenKind::LBrace {
+                    self.advance(); // consume {
+                    let mut fields = Vec::new();
+                    while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                        let field_name = match &self.current_token.kind {
+                            TokenKind::Identifier(n) => n.clone(),
+                            _ => {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected field name".to_string(),
+                                    "MER0085".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        };
+                        self.advance(); // consume field name
+
+                        if self.current_token.kind != TokenKind::Colon {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected ':' after field name".to_string(),
+                                "MER0086".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                        self.advance(); // consume :
+                        
+                        let value = self.parse_expression(0)?;
+                        fields.push((field_name, value));
+
+                        if self.current_token.kind == TokenKind::Comma {
+                            self.advance();
+                        } else if self.current_token.kind != TokenKind::RBrace {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected ',' or '}' in struct initialization".to_string(),
+                                "MER0087".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    }
+                    let end_span = self.current_token.span;
+                    if self.current_token.kind == TokenKind::RBrace {
+                        self.advance(); // consume }
+                    }
+                    Expr::StructInit {
+                        name,
+                        fields,
+                        span: Span::new(start_span.start, end_span.end),
+                    }
                 } else {
                     Expr::Identifier(name, start_span)
                 }
@@ -1029,6 +1420,34 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LBrace => {
                 self.parse_block_expression()?
+            }
+            TokenKind::LBracket => {
+                let start_span = self.current_token.span;
+                self.advance(); // consume [
+                let mut elements = Vec::new();
+                while self.current_token.kind != TokenKind::RBracket && self.current_token.kind != TokenKind::EOF {
+                    elements.push(self.parse_expression(0)?);
+                    if self.current_token.kind == TokenKind::Comma {
+                        self.advance();
+                    } else if self.current_token.kind != TokenKind::RBracket {
+                        self.diagnostics.push(Diagnostic::new(
+                            "Expected ',' or ']' in array initialization".to_string(),
+                            "MER0088".to_string(),
+                            self.current_token.span,
+                            DiagnosticCategory::Syntax,
+                            None,
+                        ));
+                        return None;
+                    }
+                }
+                let end_span = self.current_token.span;
+                if self.current_token.kind == TokenKind::RBracket {
+                    self.advance(); // consume ]
+                }
+                Expr::ArrayInit {
+                    elements,
+                    span: Span::new(start_span.start, end_span.end),
+                }
             }
             TokenKind::LParen => {
                 let start_span = self.current_token.span;
@@ -1063,13 +1482,23 @@ impl<'a> Parser<'a> {
         while precedence < self.peek_precedence() {
             if self.current_token.kind == TokenKind::Equal {
                 self.advance(); // consume =
-                let right = self.parse_expression(0)?;
+                let right = self.parse_expression_impl(0, allow_struct)?;
                 let span = Span::new(left.span().start, right.span().end);
-                left = Expr::Assign {
-                    target: Box::new(left),
-                    value: Box::new(right),
-                    span,
-                };
+                
+                if let Expr::FieldAccess { object, field_name, .. } = left {
+                    left = Expr::FieldAssign {
+                        object,
+                        field_name,
+                        value: Box::new(right),
+                        span,
+                    };
+                } else {
+                    left = Expr::Assign {
+                        target: Box::new(left),
+                        value: Box::new(right),
+                        span,
+                    };
+                }
             } else if self.current_token.kind == TokenKind::LParen {
                 self.advance(); // consume (
                 let mut arguments = Vec::new();
@@ -1124,14 +1553,13 @@ impl<'a> Parser<'a> {
                         let method_name = method_name.clone();
                         self.advance(); // consume ident
                         if self.current_token.kind != TokenKind::LParen {
-                            self.diagnostics.push(Diagnostic::new(
-                                "Expected '(' after method name".to_string(),
-                                "MER0062".to_string(),
-                                self.current_token.span,
-                                DiagnosticCategory::Syntax,
-                                None,
-                            ));
-                            return None;
+                            let span = Span::new(left.span().start, self.current_token.span.start);
+                            left = Expr::FieldAccess {
+                                object: Box::new(left),
+                                field_name: method_name,
+                                span,
+                            };
+                            continue;
                         }
                         self.advance(); // consume (
                         let mut arguments = Vec::new();
@@ -1236,7 +1664,7 @@ impl<'a> Parser<'a> {
         let start_span = self.current_token.span;
         self.advance(); // consume if
 
-        let condition = self.parse_expression(0)?;
+        let condition = self.parse_expression_impl(0, false)?;
         
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -1279,6 +1707,180 @@ impl<'a> Parser<'a> {
             condition: Box::new(condition),
             then_branch: Box::new(then_branch),
             else_branch,
+            span: Span::new(start_span.start, end_span.end),
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Option<meridian_ast::Pattern> {
+        match &self.current_token.kind {
+            TokenKind::Identifier(name) => {
+                let id_name = name.clone();
+                let start_span = self.current_token.span;
+                self.advance();
+
+                if self.current_token.kind == TokenKind::Colon && self.peek_token.kind == TokenKind::Colon {
+                    self.advance(); // consume :
+                    self.advance(); // consume :
+
+                    let variant_name = match &self.current_token.kind {
+                        TokenKind::Identifier(n) => n.clone(),
+                        _ => {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected variant name after '::'".to_string(),
+                                "MER0097".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    };
+                    self.advance(); // consume variant_name
+
+                    let mut binding_name = None;
+                    if self.current_token.kind == TokenKind::LParen {
+                        self.advance(); // consume (
+                        if let TokenKind::Identifier(b_name) = &self.current_token.kind {
+                            binding_name = Some(b_name.clone());
+                            self.advance(); // consume binding name
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected identifier in enum variant pattern".to_string(),
+                                "MER0098".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+
+                        if self.current_token.kind != TokenKind::RParen {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected ')' after enum variant pattern".to_string(),
+                                "MER0099".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                        self.advance(); // consume )
+                    }
+                    
+                    Some(meridian_ast::Pattern::EnumVariant {
+                        enum_name: id_name,
+                        variant_name,
+                        binding_name,
+                        span: Span::new(start_span.start, self.current_token.span.end), // approx
+                    })
+                } else if id_name == "_" {
+                    Some(meridian_ast::Pattern::CatchAll(start_span))
+                } else {
+                    Some(meridian_ast::Pattern::Identifier(id_name, start_span))
+                }
+            }
+            TokenKind::Number(n) => {
+                let pat = meridian_ast::Pattern::Number(*n, self.current_token.span);
+                self.advance();
+                Some(pat)
+            }
+            TokenKind::Int(n) => {
+                let pat = meridian_ast::Pattern::Int(*n, self.current_token.span);
+                self.advance();
+                Some(pat)
+            }
+            TokenKind::String(s) => {
+                let pat = meridian_ast::Pattern::String(s.clone(), self.current_token.span);
+                self.advance();
+                Some(pat)
+            }
+            TokenKind::True => {
+                let pat = meridian_ast::Pattern::Bool(true, self.current_token.span);
+                self.advance();
+                Some(pat)
+            }
+            TokenKind::False => {
+                let pat = meridian_ast::Pattern::Bool(false, self.current_token.span);
+                self.advance();
+                Some(pat)
+            }
+            _ => {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected pattern".to_string(),
+                    "MER0100".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                None
+            }
+        }
+    }
+
+    fn parse_match_expression(&mut self) -> Option<Expr> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume match
+
+        let value = self.parse_expression_impl(0, false)?;
+
+        if self.current_token.kind != TokenKind::LBrace {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected '{' after match expression".to_string(),
+                "MER0101".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+            return None;
+        }
+        self.advance(); // consume {
+
+        let mut arms = Vec::new();
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let pat = self.parse_pattern()?;
+
+            if self.current_token.kind != TokenKind::FatArrow {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected '=>' after match pattern".to_string(),
+                    "MER0102".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+            self.advance(); // consume =>
+
+            // The arm body is an expression
+            let body = self.parse_expression(0)?;
+            
+            arms.push((pat, body.clone()));
+
+            if self.current_token.kind == TokenKind::Comma {
+                self.advance();
+            } else if self.current_token.kind != TokenKind::RBrace {
+                // if it was a block expression, comma is optional but allowed.
+                if !matches!(body, Expr::Block(..)) {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ',' or '}' after match arm".to_string(),
+                        "MER0103".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            }
+        }
+
+        let end_span = self.current_token.span;
+        if self.current_token.kind == TokenKind::RBrace {
+            self.advance(); // consume }
+        }
+
+        Some(Expr::Match {
+            value: Box::new(value),
+            arms,
             span: Span::new(start_span.start, end_span.end),
         })
     }

@@ -4,7 +4,7 @@
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-  [![Version](https://img.shields.io/badge/version-v4.1.0-orange.svg)]()
+  [![Version](https://img.shields.io/badge/version-v0.1.0-orange.svg)]()
 </div>
 
 ---
@@ -17,7 +17,7 @@ Meridian was born out of a desire for a language that combines the **ergonomics 
 * **Strict Type Safety:** Catch bugs at compile time.
 * **Dual Execution Modes:** Run fast in the VM, or compile to native machine code with Cranelift.
 * **Agentic by Design:** First-class language primitives designed for AI tool-calling and sandboxed execution.
-* **Zero Magic:** No invisible memory allocations. Predictable performance.
+* **Predictable Memory Model:** Uses automatic reference counting (ARC) for seamless, GC-pause-free memory management.
 
 ---
 

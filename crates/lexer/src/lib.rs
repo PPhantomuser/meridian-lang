@@ -23,6 +23,10 @@ pub enum TokenKind {
     Extern,
     Unsafe,
     Import,
+    Struct,
+    Enum,
+    Match,
+    Int(i64),
     True,
     False,
     Equal,
@@ -40,6 +44,7 @@ pub enum TokenKind {
     Colon,
     Comma,
     Arrow,
+    FatArrow,
     Dot,
     DotDot,
     DotDotEqual,
@@ -134,6 +139,9 @@ impl<'a> Lexer<'a> {
                 if let Some(&(next_idx, '=')) = self.chars.peek() {
                     self.chars.next();
                     Token { kind: TokenKind::EqualEqual, span: Span::new(start, next_idx + 1) }
+                } else if let Some(&(next_idx, '>')) = self.chars.peek() {
+                    self.chars.next();
+                    Token { kind: TokenKind::FatArrow, span: Span::new(start, next_idx + 1) }
                 } else {
                     Token { kind: TokenKind::Equal, span: Span::new(start, start + 1) }
                 }
@@ -257,6 +265,8 @@ impl<'a> Lexer<'a> {
         text.push(first);
         let mut end = start + first.len_utf8();
 
+        let mut is_float = false;
+
         while let Some(&(idx, ch)) = self.chars.peek() {
             if ch.is_ascii_digit() {
                 text.push(ch);
@@ -273,15 +283,24 @@ impl<'a> Lexer<'a> {
                 text.push(ch);
                 end = idx + ch.len_utf8();
                 self.chars.next();
+                is_float = true;
             } else {
                 break;
             }
         }
 
-        let num = text.parse::<f64>().unwrap_or(0.0);
-        Token {
-            kind: TokenKind::Number(num),
-            span: Span::new(start, end),
+        if is_float {
+            let num = text.parse::<f64>().unwrap_or(0.0);
+            Token {
+                kind: TokenKind::Number(num),
+                span: Span::new(start, end),
+            }
+        } else {
+            let num = text.parse::<i64>().unwrap_or(0);
+            Token {
+                kind: TokenKind::Int(num),
+                span: Span::new(start, end),
+            }
         }
     }
 
@@ -319,6 +338,9 @@ impl<'a> Lexer<'a> {
             "extern" => TokenKind::Extern,
             "unsafe" => TokenKind::Unsafe,
             "import" => TokenKind::Import,
+            "struct" => TokenKind::Struct,
+            "enum" => TokenKind::Enum,
+            "match" => TokenKind::Match,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             _ => TokenKind::Identifier(text),

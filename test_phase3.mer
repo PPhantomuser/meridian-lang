@@ -1,0 +1,22 @@
+enum Option {
+    Some(Number),
+    None,
+}
+
+fn main() {
+    let x: Int = 10;
+    let y = [1, 2, 3];
+    let z = y[x]; // Should error because array length is 3 and index is 10, but at runtime.
+                  // Type checking should pass since x is Int! Wait, y is array of Number, so it passes.
+                  // Wait, actually `y` elements are parsed as Int? If there's no decimal they are Int? No, we didn't change Number parser to Int unless it has 'i' suffix or something? Let's check parser.
+    
+    let opt = Option::Some(42.0);
+    match opt {
+        Option::Some(val) => {
+            print(val);
+        }
+        Option::None => {
+            print(0.0);
+        }
+    }
+}

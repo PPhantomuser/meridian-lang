@@ -1,4 +1,3 @@
-// Paste the Gemini ATM code here!
 // 1. We define a helper function to show the account info (simulating the inherited data).
 // It returns a Bool because all functions must return a value, and we use implicit returns.
 fn display_account(acc_id: Number, acc_balance: Number) -> Bool {

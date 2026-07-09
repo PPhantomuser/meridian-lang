@@ -85,7 +85,8 @@ impl AOTCompiler {
             self.module.clear_context(&mut self.ctx);
         }
 
-        let main_sig = self.module.make_signature();
+        let mut main_sig = self.module.make_signature();
+        main_sig.returns.push(AbiParam::new(types::I32));
         let main_func_id = self.module.declare_function("main", Linkage::Export, &main_sig).unwrap();
         
         self.compile_chunk(&program_ir.main_chunk, 0, false);
@@ -104,6 +105,8 @@ impl AOTCompiler {
         }
         if has_return {
             builder.func.signature.returns.push(AbiParam::new(types::F64));
+        } else {
+            builder.func.signature.returns.push(AbiParam::new(types::I32));
         }
 
         let entry_block = builder.create_block();
@@ -256,8 +259,22 @@ impl AOTCompiler {
                     let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val_f64);
                     builder.ins().stack_store(res_i64, slots[*dest], 0);
                 }
+                Opcode::MakeStruct(..) |
+                Opcode::FieldAccess(..) |
+                Opcode::FieldAssign(..) |
+                Opcode::MakeEnum(..) |
+                Opcode::CheckEnum(..) |
+                Opcode::ExtractEnum(..) |
+                Opcode::MakeArray(..) |
+                Opcode::ArrayIndex(..) |
+                Opcode::ArrayAssign(..) |
+                Opcode::AsyncCall(..) |
+                Opcode::Await(..) |
+                Opcode::Spawn(..) => {
+                    panic!("Struct/Enum/Array/Async opcodes are not supported in AOT MVP (fallback to VM recommended)");
+                }
                 _ => {
-                    // Fallback for unsupported opcodes in AOT prototype
+                    panic!("Unsupported opcode in AOT prototype: {:?}", inst);
                 }
             }
         }
@@ -275,7 +292,8 @@ impl AOTCompiler {
         
         builder.switch_to_block(end_block);
         if !has_return {
-            builder.ins().return_(&[]);
+            let zero = builder.ins().iconst(types::I32, 0);
+            builder.ins().return_(&[zero]);
         }
 
         builder.seal_all_blocks();

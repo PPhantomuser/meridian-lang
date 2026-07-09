@@ -117,6 +117,8 @@ impl Linter {
                 Stmt::Continue(s) => s.clone(),
                 Stmt::MacroDef { span, .. } => span.clone(),
                 Stmt::ExternBlock { span, .. } => span.clone(),
+                Stmt::StructDef { span, .. } => span.clone(),
+                Stmt::EnumDef { span, .. } => span.clone(),
             };
 
             if found_terminator {
@@ -159,6 +161,13 @@ impl Linter {
             Expr::UnsafeBlock { span, .. } => span.clone(),
             Expr::Error(span) => span.clone(),
             Expr::MacroCall { span, .. } => span.clone(),
+            Expr::StructInit { span, .. } => span.clone(),
+            Expr::FieldAccess { span, .. } => span.clone(),
+            Expr::FieldAssign { span, .. } => span.clone(),
+            Expr::ArrayInit { span, .. } => span.clone(),
+            Expr::Int(_, span) => span.clone(),
+            Expr::Match { span, .. } => span.clone(),
+            Expr::EnumInit { span, .. } => span.clone(),
         }
     }
 

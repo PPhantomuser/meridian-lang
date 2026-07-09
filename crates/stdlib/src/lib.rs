@@ -6,15 +6,15 @@ pub fn register_all(vm: &mut VM) {
         "read_file",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("read_file expects exactly 1 argument");
+                return Value::Error("read_file expects exactly 1 argument".to_string());
             }
             if let Value::String(path) = &args[0] {
                 match fs::read_to_string(path) {
-                    Ok(content) => Value::String(content),
-                    Err(_) => Value::Null, // Simple error handling for now
+                    Ok(content) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(content)))),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
                 }
             } else {
-                panic!("read_file expects a String argument");
+                return Value::Error("read_file expects a String argument".to_string());
             }
         }),
     );
@@ -24,7 +24,7 @@ pub fn register_all(vm: &mut VM) {
         "hashmap_new",
         Box::new(|args: &[Value]| {
             if !args.is_empty() {
-                panic!("hashmap_new expects 0 arguments");
+                return Value::Error("hashmap_new expects 0 arguments".to_string());
             }
             let map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
             Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(map)))
@@ -35,7 +35,7 @@ pub fn register_all(vm: &mut VM) {
         "hashmap_insert",
         Box::new(|args: &[Value]| {
             if args.len() != 3 {
-                panic!("hashmap_insert expects 3 arguments (map, key, value)");
+                return Value::Error("hashmap_insert expects 3 arguments (map, key, value)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let Value::String(key) = &args[1] {
@@ -46,7 +46,7 @@ pub fn register_all(vm: &mut VM) {
                     }
                 }
             }
-            panic!("Invalid arguments to hashmap_insert");
+            return Value::Error("Invalid arguments to hashmap_insert".to_string());
         }),
     );
 
@@ -54,21 +54,21 @@ pub fn register_all(vm: &mut VM) {
         "hashmap_get",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("hashmap_get expects 2 arguments (map, key)");
+                return Value::Error("hashmap_get expects 2 arguments (map, key)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let Value::String(key) = &args[1] {
                     let guard = obj.lock().unwrap();
                     if let Some(map) = guard.downcast_ref::<std::collections::HashMap<String, Value>>() {
                         if let Some(val) = map.get(key) {
-                            return val.clone();
+                            return Value::Enum("Option".into(), "Some".into(), Some(Box::new(val.clone())));
                         } else {
-                            return Value::Null;
+                            return Value::Enum("Option".into(), "None".into(), None);
                         }
                     }
                 }
             }
-            panic!("Invalid arguments to hashmap_get");
+            return Value::Error("Invalid arguments to hashmap_get".to_string());
         }),
     );
 
@@ -77,7 +77,7 @@ pub fn register_all(vm: &mut VM) {
         "hashset_new",
         Box::new(|args: &[Value]| {
             if !args.is_empty() {
-                panic!("hashset_new expects 0 arguments");
+                return Value::Error("hashset_new expects 0 arguments".to_string());
             }
             let set: std::collections::HashSet<String> = std::collections::HashSet::new();
             Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(set)))
@@ -88,7 +88,7 @@ pub fn register_all(vm: &mut VM) {
         "hashset_insert",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("hashset_insert expects 2 arguments (set, value)");
+                return Value::Error("hashset_insert expects 2 arguments (set, value)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let Value::String(val) = &args[1] {
@@ -99,7 +99,7 @@ pub fn register_all(vm: &mut VM) {
                     }
                 }
             }
-            panic!("Invalid arguments to hashset_insert");
+            return Value::Error("Invalid arguments to hashset_insert".to_string());
         }),
     );
 
@@ -107,7 +107,7 @@ pub fn register_all(vm: &mut VM) {
         "hashset_contains",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("hashset_contains expects 2 arguments (set, value)");
+                return Value::Error("hashset_contains expects 2 arguments (set, value)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let Value::String(val) = &args[1] {
@@ -117,7 +117,7 @@ pub fn register_all(vm: &mut VM) {
                     }
                 }
             }
-            panic!("Invalid arguments to hashset_contains");
+            return Value::Error("Invalid arguments to hashset_contains".to_string());
         }),
     );
 
@@ -126,7 +126,7 @@ pub fn register_all(vm: &mut VM) {
         "vecdeque_new",
         Box::new(|args: &[Value]| {
             if !args.is_empty() {
-                panic!("vecdeque_new expects 0 arguments");
+                return Value::Error("vecdeque_new expects 0 arguments".to_string());
             }
             let deque: std::collections::VecDeque<Value> = std::collections::VecDeque::new();
             Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(deque)))
@@ -137,7 +137,7 @@ pub fn register_all(vm: &mut VM) {
         "vecdeque_push_back",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("vecdeque_push_back expects 2 arguments (deque, value)");
+                return Value::Error("vecdeque_push_back expects 2 arguments (deque, value)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
@@ -146,7 +146,7 @@ pub fn register_all(vm: &mut VM) {
                     return Value::Null;
                 }
             }
-            panic!("Invalid arguments to vecdeque_push_back");
+            return Value::Error("Invalid arguments to vecdeque_push_back".to_string());
         }),
     );
 
@@ -154,19 +154,19 @@ pub fn register_all(vm: &mut VM) {
         "vecdeque_pop_front",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("vecdeque_pop_front expects 1 argument (deque)");
+                return Value::Error("vecdeque_pop_front expects 1 argument (deque)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(deque) = guard.downcast_mut::<std::collections::VecDeque<Value>>() {
                     if let Some(val) = deque.pop_front() {
-                        return val;
+                        return Value::Enum("Option".into(), "Some".into(), Some(Box::new(val)));
                     } else {
-                        return Value::Null;
+                        return Value::Enum("Option".into(), "None".into(), None);
                     }
                 }
             }
-            panic!("Invalid arguments to vecdeque_pop_front");
+            return Value::Error("Invalid arguments to vecdeque_pop_front".to_string());
         }),
     );
 
@@ -175,7 +175,7 @@ pub fn register_all(vm: &mut VM) {
         "json_parse",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("json_parse expects 1 argument (json_string)");
+                return Value::Error("json_parse expects 1 argument (json_string)".to_string());
             }
             if let Value::String(s) = &args[0] {
                 let parsed: Result<serde_json::Value, _> = serde_json::from_str(s);
@@ -184,7 +184,7 @@ pub fn register_all(vm: &mut VM) {
                     Err(_) => Value::Null,
                 }
             } else {
-                panic!("json_parse expects a string");
+                return Value::Error("json_parse expects a string".to_string());
             }
         }),
     );
@@ -193,7 +193,7 @@ pub fn register_all(vm: &mut VM) {
         "json_stringify",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("json_stringify expects 1 argument (json_object)");
+                return Value::Error("json_stringify expects 1 argument (json_object)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let guard = obj.lock().unwrap();
@@ -202,7 +202,7 @@ pub fn register_all(vm: &mut VM) {
                     return Value::String(s);
                 }
             }
-            panic!("json_stringify expects a json object");
+            return Value::Error("json_stringify expects a json object".to_string());
         }),
     );
 
@@ -211,20 +211,19 @@ pub fn register_all(vm: &mut VM) {
         "tcp_bind",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("tcp_bind expects 1 argument (address)");
+                return Value::Error("tcp_bind expects 1 argument (address)".to_string());
             }
             if let Value::String(addr) = &args[0] {
                 match std::net::TcpListener::bind(addr) {
                     Ok(listener) => {
-                        Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(listener)))
+                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(listener))))))
                     }
                     Err(e) => {
-                        println!("tcp_bind error: {}", e);
-                        Value::Null
+                        Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                     }
                 }
             } else {
-                panic!("tcp_bind expects a String address");
+                return Value::Error("tcp_bind expects a String address".to_string());
             }
         }),
     );
@@ -233,25 +232,24 @@ pub fn register_all(vm: &mut VM) {
         "tcp_accept",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("tcp_accept expects 1 argument (listener)");
+                return Value::Error("tcp_accept expects 1 argument (listener)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(listener) = guard.downcast_mut::<std::net::TcpListener>() {
                     match listener.accept() {
                         Ok((stream, _addr)) => {
-                            Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(stream)))
+                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(stream))))))
                         }
                         Err(e) => {
-                            println!("tcp_accept error: {}", e);
-                            Value::Null
+                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                         }
                     }
                 } else {
-                    panic!("tcp_accept expects a TcpListener");
+                    return Value::Error("tcp_accept expects a TcpListener".to_string());
                 }
             } else {
-                panic!("tcp_accept expects a TcpListener NativeObject");
+                return Value::Error("tcp_accept expects a TcpListener NativeObject".to_string());
             }
         }),
     );
@@ -261,7 +259,7 @@ pub fn register_all(vm: &mut VM) {
         Box::new(|args: &[Value]| {
             use std::io::Read;
             if args.len() != 1 {
-                panic!("tcp_read expects 1 argument (stream)");
+                return Value::Error("tcp_read expects 1 argument (stream)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
@@ -270,18 +268,17 @@ pub fn register_all(vm: &mut VM) {
                     match stream.read(&mut buffer) {
                         Ok(size) => {
                             let s = String::from_utf8_lossy(&buffer[..size]).into_owned();
-                            Value::String(s)
+                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(s))))
                         }
                         Err(e) => {
-                            println!("tcp_read error: {}", e);
-                            Value::Null
+                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                         }
                     }
                 } else {
-                    panic!("tcp_read expects a TcpStream");
+                    return Value::Error("tcp_read expects a TcpStream".to_string());
                 }
             } else {
-                panic!("tcp_read expects a TcpStream NativeObject");
+                return Value::Error("tcp_read expects a TcpStream NativeObject".to_string());
             }
         }),
     );
@@ -291,27 +288,26 @@ pub fn register_all(vm: &mut VM) {
         Box::new(|args: &[Value]| {
             use std::io::Write;
             if args.len() != 2 {
-                panic!("tcp_write expects 2 arguments (stream, data)");
+                return Value::Error("tcp_write expects 2 arguments (stream, data)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let Value::String(data) = &args[1] {
                     let mut guard = obj.lock().unwrap();
                     if let Some(stream) = guard.downcast_mut::<std::net::TcpStream>() {
                         match stream.write_all(data.as_bytes()) {
-                            Ok(_) => Value::Bool(true),
+                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
                             Err(e) => {
-                                println!("tcp_write error: {}", e);
-                                Value::Bool(false)
+                                Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                             }
                         }
                     } else {
-                        panic!("tcp_write expects a TcpStream");
+                        return Value::Error("tcp_write expects a TcpStream".to_string());
                     }
                 } else {
-                    panic!("tcp_write data must be String");
+                    return Value::Error("tcp_write data must be String".to_string());
                 }
             } else {
-                panic!("tcp_write expects a TcpStream NativeObject");
+                return Value::Error("tcp_write expects a TcpStream NativeObject".to_string());
             }
         }),
     );
@@ -321,15 +317,15 @@ pub fn register_all(vm: &mut VM) {
         "file_write",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("file_write expects 2 arguments (path, content)");
+                return Value::Error("file_write expects 2 arguments (path, content)".to_string());
             }
             if let (Value::String(path), Value::String(content)) = (&args[0], &args[1]) {
                 match std::fs::write(path, content) {
-                    Ok(_) => Value::Bool(true),
-                    Err(_) => Value::Bool(false),
+                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
                 }
             } else {
-                panic!("file_write arguments must be String");
+                return Value::Error("file_write arguments must be String".to_string());
             }
         }),
     );
@@ -339,20 +335,20 @@ pub fn register_all(vm: &mut VM) {
         Box::new(|args: &[Value]| {
             use std::io::Write;
             if args.len() != 2 {
-                panic!("file_append expects 2 arguments (path, content)");
+                return Value::Error("file_append expects 2 arguments (path, content)".to_string());
             }
             if let (Value::String(path), Value::String(content)) = (&args[0], &args[1]) {
                 match std::fs::OpenOptions::new().create(true).append(true).open(path) {
                     Ok(mut file) => {
                         match file.write_all(content.as_bytes()) {
-                            Ok(_) => Value::Bool(true),
-                            Err(_) => Value::Bool(false),
+                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
+                            Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
                         }
                     }
-                    Err(_) => Value::Bool(false),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
                 }
             } else {
-                panic!("file_append arguments must be String");
+                return Value::Error("file_append arguments must be String".to_string());
             }
         }),
     );
@@ -361,15 +357,15 @@ pub fn register_all(vm: &mut VM) {
         "file_delete",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("file_delete expects 1 argument (path)");
+                return Value::Error("file_delete expects 1 argument (path)".to_string());
             }
             if let Value::String(path) = &args[0] {
                 match std::fs::remove_file(path) {
-                    Ok(_) => Value::Bool(true),
-                    Err(_) => Value::Bool(false),
+                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
                 }
             } else {
-                panic!("file_delete argument must be String");
+                return Value::Error("file_delete argument must be String".to_string());
             }
         }),
     );
@@ -378,12 +374,12 @@ pub fn register_all(vm: &mut VM) {
         "file_exists",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("file_exists expects 1 argument (path)");
+                return Value::Error("file_exists expects 1 argument (path)".to_string());
             }
             if let Value::String(path) = &args[0] {
                 Value::Bool(std::path::Path::new(path).exists())
             } else {
-                panic!("file_exists argument must be String");
+                return Value::Error("file_exists argument must be String".to_string());
             }
         }),
     );
@@ -393,7 +389,7 @@ pub fn register_all(vm: &mut VM) {
         "process_output",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("process_output expects 2 arguments (command, vecdeque_args)");
+                return Value::Error("process_output expects 2 arguments (command, vecdeque_args)".to_string());
             }
             if let Value::String(cmd) = &args[0] {
                 let mut command = std::process::Command::new(cmd);
@@ -406,23 +402,22 @@ pub fn register_all(vm: &mut VM) {
                             }
                         }
                     } else {
-                        panic!("process_output args must be a VecDeque");
+                        return Value::Error("process_output args must be a VecDeque".to_string());
                     }
                 } else {
-                    panic!("process_output args must be a VecDeque NativeObject");
+                    return Value::Error("process_output args must be a VecDeque NativeObject".to_string());
                 }
                 match command.output() {
                     Ok(output) => {
                         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                        Value::String(stdout)
+                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(stdout))))
                     }
                     Err(e) => {
-                        println!("process_output error: {}", e);
-                        Value::Null
+                        Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                     }
                 }
             } else {
-                panic!("process_output command must be String");
+                return Value::Error("process_output command must be String".to_string());
             }
         }),
     );
@@ -431,20 +426,19 @@ pub fn register_all(vm: &mut VM) {
         "dlopen",
         Box::new(|args: &[Value]| {
             if args.len() != 1 {
-                panic!("dlopen expects 1 argument (path)");
+                return Value::Error("dlopen expects 1 argument (path)".to_string());
             }
             if let Value::String(path) = &args[0] {
                 unsafe {
                     match libloading::Library::new(path) {
-                        Ok(lib) => Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(lib))),
+                        Ok(lib) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(lib)))))),
                         Err(e) => {
-                            println!("dlopen error: {}", e);
-                            Value::Null
+                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                         }
                     }
                 }
             } else {
-                panic!("dlopen argument must be String");
+                return Value::Error("dlopen argument must be String".to_string());
             }
         }),
     );
@@ -453,7 +447,7 @@ pub fn register_all(vm: &mut VM) {
         "dlsym",
         Box::new(|args: &[Value]| {
             if args.len() != 3 {
-                panic!("dlsym expects 3 arguments (library, symbol_name, signature)");
+                return Value::Error("dlsym expects 3 arguments (library, symbol_name, signature)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 if let (Value::String(sym), Value::String(sig)) = (&args[1], &args[2]) {
@@ -468,22 +462,21 @@ pub fn register_all(vm: &mut VM) {
                                         ptr,
                                         signature: sig.clone(),
                                     };
-                                    return Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(func)));
+                                    return Value::Enum("Option".into(), "Some".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(func))))));
                                 }
                                 Err(e) => {
-                                    println!("dlsym error: {}", e);
-                                    return Value::Null;
+                                    return Value::Enum("Option".into(), "None".into(), None);
                                 }
                             }
                         }
                     } else {
-                        panic!("dlsym expects a libloading::Library NativeObject");
+                        return Value::Error("dlsym expects a libloading::Library NativeObject".to_string());
                     }
                 } else {
-                    panic!("dlsym arguments must be String");
+                    return Value::Error("dlsym arguments must be String".to_string());
                 }
             } else {
-                panic!("dlsym expects a Library NativeObject");
+                return Value::Error("dlsym expects a Library NativeObject".to_string());
             }
         }),
     );
@@ -492,7 +485,7 @@ pub fn register_all(vm: &mut VM) {
         "dlcall",
         Box::new(|args: &[Value]| {
             if args.len() != 2 {
-                panic!("dlcall expects 2 arguments (function, vecdeque_args)");
+                return Value::Error("dlcall expects 2 arguments (function, vecdeque_args)".to_string());
             }
             if let Value::NativeObject(obj) = &args[0] {
                 let guard = obj.lock().unwrap();
@@ -503,43 +496,43 @@ pub fn register_all(vm: &mut VM) {
                             // Match signatures
                             match func.signature.as_str() {
                                 "f64,f64->f64" => {
-                                    if deque.len() != 2 { panic!("dlcall signature f64,f64->f64 requires 2 arguments"); }
+                                    if deque.len() != 2 { return Value::Error("dlcall signature f64,f64->f64 requires 2 arguments".to_string()); }
                                     if let (Value::Number(a), Value::Number(b)) = (&deque[0], &deque[1]) {
                                         let c_fn: unsafe extern "C" fn(f64, f64) -> f64 = unsafe { std::mem::transmute(func.ptr) };
                                         let res = unsafe { c_fn(*a, *b) };
-                                        return Value::Number(res);
+                                        return Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Number(res))));
                                     } else {
-                                        panic!("dlcall arguments do not match signature");
+                                        return Value::Error("dlcall arguments do not match signature".to_string());
                                     }
                                 }
                                 "string->string" => {
-                                    if deque.len() != 1 { panic!("dlcall signature string->string requires 1 argument"); }
+                                    if deque.len() != 1 { return Value::Error("dlcall signature string->string requires 1 argument".to_string()); }
                                     if let Value::String(s) = &deque[0] {
                                         let c_str = std::ffi::CString::new(s.as_str()).unwrap();
                                         let c_fn: unsafe extern "C" fn(*const std::ffi::c_char) -> *const std::ffi::c_char = unsafe { std::mem::transmute(func.ptr) };
                                         let res_ptr = unsafe { c_fn(c_str.as_ptr()) };
                                         if res_ptr.is_null() {
-                                            return Value::Null;
+                                            return Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String("Null pointer".to_string()))));
                                         }
                                         let res_c_str = unsafe { std::ffi::CStr::from_ptr(res_ptr) };
-                                        return Value::String(res_c_str.to_string_lossy().into_owned());
+                                        return Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(res_c_str.to_string_lossy().into_owned()))));
                                     } else {
-                                        panic!("dlcall arguments do not match signature");
+                                        return Value::Error("dlcall arguments do not match signature".to_string());
                                     }
                                 }
-                                _ => panic!("dlcall unsupported signature: {}", func.signature),
+                                _ => Value::Error(format!("dlcall unsupported signature: {}", func.signature)),
                             }
                         } else {
-                            panic!("dlcall args must be a VecDeque");
+                            return Value::Error("dlcall args must be a VecDeque".to_string());
                         }
                     } else {
-                        panic!("dlcall args must be a VecDeque NativeObject");
+                        return Value::Error("dlcall args must be a VecDeque NativeObject".to_string());
                     }
                 } else {
-                    panic!("dlcall expects a FFIFunction NativeObject");
+                    return Value::Error("dlcall expects a FFIFunction NativeObject".to_string());
                 }
             } else {
-                panic!("dlcall expects a NativeObject");
+                return Value::Error("dlcall expects a NativeObject".to_string());
             }
         }),
     );

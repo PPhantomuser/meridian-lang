@@ -95,7 +95,8 @@ impl JITCompiler {
         }
 
         // Compile main
-        let main_sig = self.module.make_signature();
+        let mut main_sig = self.module.make_signature();
+        main_sig.returns.push(AbiParam::new(types::I32));
         // main has no args, returns void or 0
         let main_func_id = self.module.declare_function("main", Linkage::Export, &main_sig).unwrap();
         
@@ -108,7 +109,7 @@ impl JITCompiler {
 
         // Get the main function pointer and run it
         let code = self.module.get_finalized_function(main_func_id);
-        let main_fn: extern "C" fn() = unsafe { std::mem::transmute(code) };
+        let main_fn: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
         main_fn();
     }
 
@@ -121,6 +122,8 @@ impl JITCompiler {
         }
         if has_return {
             builder.func.signature.returns.push(AbiParam::new(types::F64));
+        } else {
+            builder.func.signature.returns.push(AbiParam::new(types::I32));
         }
 
         let entry_block = builder.create_block();
@@ -174,6 +177,7 @@ impl JITCompiler {
                 Opcode::LoadConst(dest, const_idx) => {
                     let val = match &chunk.constants[*const_idx] {
                         ConstValue::Number(n) => builder.ins().f64const(*n),
+                        ConstValue::Int(n) => builder.ins().f64const(*n as f64), // temporary workaround until we support i64 native
                         ConstValue::Bool(b) => builder.ins().f64const(if *b { 1.0 } else { 0.0 }),
                         _ => builder.ins().f64const(0.0), // unsupported in primitive subset
                     };
@@ -312,6 +316,15 @@ impl JITCompiler {
                 Opcode::AsyncCall(_, _, _, _) | Opcode::Await(_, _) | Opcode::Spawn(_, _) => {
                     unimplemented!("Async not yet supported in Cranelift backend.");
                 }
+                Opcode::MakeStruct(..) | Opcode::FieldAccess(..) | Opcode::FieldAssign(..) => {
+                    unimplemented!("Structs not yet supported in Cranelift backend (AOT Phase 2 fallback to VM Handles pending).");
+                }
+                Opcode::MakeArray(..) | Opcode::ArrayIndex(..) | Opcode::ArrayAssign(..) => {
+                    unimplemented!("Arrays not yet supported in Cranelift backend (AOT Phase 2 fallback to VM Handles pending).");
+                }
+                Opcode::MakeEnum(..) | Opcode::CheckEnum(..) | Opcode::ExtractEnum(..) => {
+                    unimplemented!("Enums not yet supported in Cranelift backend.");
+                }
             }
         }
 
@@ -320,7 +333,8 @@ impl JITCompiler {
                 let zero = builder.ins().f64const(0.0);
                 builder.ins().return_(&[zero]);
             } else {
-                builder.ins().return_(&[]);
+                let zero = builder.ins().iconst(types::I32, 0);
+                builder.ins().return_(&[zero]);
             }
         }
 

@@ -1,0 +1,10 @@
+let content = read_file("test_option.mer");
+match content {
+    Result::Ok(c) => {
+        print "read_file ok";
+    }
+    Result::Err(e) => {
+        print "read_file error";
+        print e;
+    }
+}
