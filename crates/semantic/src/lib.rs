@@ -62,6 +62,7 @@ pub struct SemanticAnalyzer {
     macro_expansion_depth: usize,
     in_unsafe_block: bool,
     pub index: SemanticIndex,
+    pub type_map: HashMap<Span, Type>,
 }
 
 impl SemanticAnalyzer {
@@ -78,6 +79,7 @@ impl SemanticAnalyzer {
             macro_expansion_depth: 0,
             in_unsafe_block: false,
             index: SemanticIndex::default(),
+            type_map: HashMap::new(),
         };
         // Register standard library
         let native_funcs = vec![
@@ -127,9 +129,6 @@ impl SemanticAnalyzer {
             return true;
         }
         if *expected == Type::Unknown || *actual == Type::Unknown || *actual == Type::Error {
-            return true;
-        }
-        if *expected == Type::Number && *actual == Type::Int {
             return true;
         }
         false
@@ -451,6 +450,12 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_expression(&mut self, expr: &Expr) -> Type {
+        let ty = self.analyze_expression_inner(expr);
+        self.type_map.insert(expr.span(), ty.clone());
+        ty
+    }
+
+    fn analyze_expression_inner(&mut self, expr: &Expr) -> Type {
         match expr {
             Expr::Number(_, _) => Type::Number,
             Expr::String(_, _) => Type::String,

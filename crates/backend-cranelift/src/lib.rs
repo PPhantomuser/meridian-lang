@@ -188,31 +188,31 @@ impl JITCompiler {
                     let val = builder.use_var(Variable::new(*src));
                     builder.def_var(Variable::new(*dest), val);
                 }
-                Opcode::Add(dest, left, right) => {
+                Opcode::Add(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let res = builder.ins().fadd(l, r);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Sub(dest, left, right) => {
+                Opcode::Sub(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let res = builder.ins().fsub(l, r);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Mul(dest, left, right) => {
+                Opcode::Mul(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let res = builder.ins().fmul(l, r);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Div(dest, left, right) => {
+                Opcode::Div(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let res = builder.ins().fdiv(l, r);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Eq(dest, left, right) => {
+                Opcode::Eq(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, l, r);
@@ -222,7 +222,7 @@ impl JITCompiler {
                     let res = builder.ins().select(cmp, true_val, false_val);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Lt(dest, left, right) => {
+                Opcode::Lt(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThan, l, r);
@@ -232,7 +232,7 @@ impl JITCompiler {
                     let res = builder.ins().select(cmp, true_val, false_val);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Le(dest, left, right) => {
+                Opcode::Le(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual, l, r);
@@ -242,7 +242,7 @@ impl JITCompiler {
                     let res = builder.ins().select(cmp, true_val, false_val);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Gt(dest, left, right) => {
+                Opcode::Gt(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::GreaterThan, l, r);
@@ -252,7 +252,7 @@ impl JITCompiler {
                     let res = builder.ins().select(cmp, true_val, false_val);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Ge(dest, left, right) => {
+                Opcode::Ge(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual, l, r);
@@ -262,7 +262,7 @@ impl JITCompiler {
                     let res = builder.ins().select(cmp, true_val, false_val);
                     builder.def_var(Variable::new(*dest), res);
                 }
-                Opcode::Ne(dest, left, right) => {
+                Opcode::Ne(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
                     let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::NotEqual, l, r);

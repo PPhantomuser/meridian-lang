@@ -9,16 +9,16 @@ pub type Offset = usize;
 pub enum Opcode {
     LoadConst(Register, ConstIndex),   // dest, const_idx
     Move(Register, Register),          // dest, src
-    Add(Register, Register, Register), // dest, left, right
-    Sub(Register, Register, Register), // dest, left, right
-    Mul(Register, Register, Register), // dest, left, right
-    Div(Register, Register, Register), // dest, left, right
-    Eq(Register, Register, Register),  // dest, left, right
-    Ne(Register, Register, Register),  // dest, left, right
-    Lt(Register, Register, Register),  // dest, left, right
-    Le(Register, Register, Register),  // dest, left, right
-    Gt(Register, Register, Register),  // dest, left, right
-    Ge(Register, Register, Register),  // dest, left, right
+    Add(Register, Register, Register, bool), // dest, left, right, is_float
+    Sub(Register, Register, Register, bool), // dest, left, right, is_float
+    Mul(Register, Register, Register, bool), // dest, left, right, is_float
+    Div(Register, Register, Register, bool), // dest, left, right, is_float
+    Eq(Register, Register, Register, bool),  // dest, left, right, is_float
+    Ne(Register, Register, Register, bool),  // dest, left, right, is_float
+    Lt(Register, Register, Register, bool),  // dest, left, right, is_float
+    Le(Register, Register, Register, bool),  // dest, left, right, is_float
+    Gt(Register, Register, Register, bool),  // dest, left, right, is_float
+    Ge(Register, Register, Register, bool),  // dest, left, right, is_float
     JumpIfFalse(Register, Offset),     // condition, target_offset
     Jump(Offset),                      // target_offset
     Call(Register, String, Register, usize), // dest, function_name, arg_start_reg, arg_count
@@ -78,6 +78,7 @@ pub struct Compiler {
     next_reg: Register,
     locals: HashMap<String, Register>,
     loop_contexts: Vec<LoopContext>,
+    type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,13 +88,14 @@ struct LoopContext {
 }
 
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>) -> Self {
         Self {
             program_ir: ProgramIR::default(),
             current_chunk: Chunk::default(),
             next_reg: 0,
             locals: HashMap::new(),
             loop_contexts: Vec::new(),
+            type_map,
         }
     }
 
@@ -147,12 +149,23 @@ impl Compiler {
             }
         }
 
-        for stmt in main_stmts {
-            self.compile_stmt(stmt);
+        for stmt in &main_stmts {
+            self.compile_stmt(*stmt);
         }
 
-        // A10: Auto-call main if explicitly defined
-        if self.program_ir.functions.contains_key("main") {
+        // A10: Auto-call main if explicitly defined, but only if not called explicitly
+        let mut has_explicit_main_call = false;
+        for stmt in &main_stmts {
+            if let meridian_ast::Stmt::Expr(meridian_ast::Expr::Call { callee, .. }) = stmt {
+                if let meridian_ast::Expr::Identifier(name, _) = &**callee {
+                    if name == "main" {
+                        has_explicit_main_call = true;
+                    }
+                }
+            }
+        }
+        
+        if self.program_ir.functions.contains_key("main") && !has_explicit_main_call {
             let ret_reg = self.alloc_reg();
             self.current_chunk.instructions.push(Opcode::Call(ret_reg, "main".to_string(), 0, 0));
         }
@@ -217,9 +230,9 @@ impl Compiler {
                 // condition: iter < end (or <= if inclusive)
                 let cond_reg = self.alloc_reg();
                 if inclusive {
-                    self.current_chunk.instructions.push(Opcode::Le(cond_reg, iter_reg, end_reg));
+                    self.current_chunk.instructions.push(Opcode::Le(cond_reg, iter_reg, end_reg, false));
                 } else {
-                    self.current_chunk.instructions.push(Opcode::Lt(cond_reg, iter_reg, end_reg));
+                    self.current_chunk.instructions.push(Opcode::Lt(cond_reg, iter_reg, end_reg, false));
                 }
                 
                 let jump_if_false_idx = self.current_chunk.instructions.len();
@@ -236,7 +249,7 @@ impl Compiler {
                 let one_idx = self.current_chunk.add_constant(ConstValue::Number(1.0));
                 let one_reg = self.alloc_reg();
                 self.current_chunk.instructions.push(Opcode::LoadConst(one_reg, one_idx));
-                self.current_chunk.instructions.push(Opcode::Add(iter_reg, iter_reg, one_reg));
+                self.current_chunk.instructions.push(Opcode::Add(iter_reg, iter_reg, one_reg, false));
                 
                 let loop_ctx = self.loop_contexts.pop().unwrap();
                 self.current_chunk.instructions.push(Opcode::Jump(loop_start_offset));
@@ -291,21 +304,27 @@ impl Compiler {
             Expr::Identifier(name, _) => {
                 *self.locals.get(name).unwrap()
             }
-            Expr::Binary { left, operator, right, .. } => {
+            Expr::Binary { left, operator, right, span } => {
                 let left_reg = self.compile_expr(left);
                 let right_reg = self.compile_expr(right);
                 let dest = self.alloc_reg();
+                let is_float = if let Some(ty) = self.type_map.get(span) {
+                    *ty == meridian_ast::Type::Number
+                } else {
+                    false
+                };
+                
                 let op = match operator {
-                    BinaryOperator::Add => Opcode::Add(dest, left_reg, right_reg),
-                    BinaryOperator::Subtract => Opcode::Sub(dest, left_reg, right_reg),
-                    BinaryOperator::Multiply => Opcode::Mul(dest, left_reg, right_reg),
-                    BinaryOperator::Divide => Opcode::Div(dest, left_reg, right_reg),
-                    BinaryOperator::Equal => Opcode::Eq(dest, left_reg, right_reg),
-                    BinaryOperator::NotEqual => Opcode::Ne(dest, left_reg, right_reg),
-                    BinaryOperator::LessThan => Opcode::Lt(dest, left_reg, right_reg),
-                    BinaryOperator::LessThanEqual => Opcode::Le(dest, left_reg, right_reg),
-                    BinaryOperator::GreaterThan => Opcode::Gt(dest, left_reg, right_reg),
-                    BinaryOperator::GreaterThanEqual => Opcode::Ge(dest, left_reg, right_reg),
+                    BinaryOperator::Add => Opcode::Add(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::Subtract => Opcode::Sub(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::Multiply => Opcode::Mul(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::Divide => Opcode::Div(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::Equal => Opcode::Eq(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::NotEqual => Opcode::Ne(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::LessThan => Opcode::Lt(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::LessThanEqual => Opcode::Le(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::GreaterThan => Opcode::Gt(dest, left_reg, right_reg, is_float),
+                    BinaryOperator::GreaterThanEqual => Opcode::Ge(dest, left_reg, right_reg, is_float),
                 };
                 self.current_chunk.instructions.push(op);
                 dest
@@ -398,7 +417,7 @@ impl Compiler {
                             self.current_chunk.instructions.push(Opcode::LoadConst(num_reg, const_idx));
                             
                             let check_reg = self.alloc_reg();
-                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, num_reg));
+                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, num_reg, true));
                             
                             let jmp_next = self.current_chunk.instructions.len();
                             self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
@@ -419,7 +438,7 @@ impl Compiler {
                             self.current_chunk.instructions.push(Opcode::LoadConst(int_reg, const_idx));
                             
                             let check_reg = self.alloc_reg();
-                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, int_reg));
+                            self.current_chunk.instructions.push(Opcode::Eq(check_reg, val_reg, int_reg, false));
                             
                             let jmp_next = self.current_chunk.instructions.len();
                             self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));

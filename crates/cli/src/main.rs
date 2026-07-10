@@ -288,7 +288,7 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                let mut compiler = Compiler::new();
+                let mut compiler = Compiler::new(analyzer.type_map);
                 let program_ir = compiler.compile(&program);
 
                 let aot = meridian_backend_cranelift::AOTCompiler::new();
@@ -303,6 +303,11 @@ fn main() {
 #include <stdio.h>
 void print_f64(double val) {
     printf("%g\n", val);
+}
+
+int main(int argc, char** argv) {
+    extern int meridian_main();
+    return meridian_main();
 }
 "#;
                 fs::write(&c_runtime_path, runtime_c).unwrap();
@@ -392,7 +397,7 @@ void print_f64(double val) {
                 std::process::exit(1);
             }
 
-            let compiler = Compiler::new();
+            let compiler = Compiler::new(semantic.type_map);
             let program_ir = compiler.compile(&program);
 
             if *release {
@@ -565,7 +570,7 @@ void print_f64(double val) {
                     continue;
                 }
 
-                let compiler = Compiler::new();
+                let compiler = Compiler::new(semantic.type_map);
                 let program_ir = compiler.compile(&program);
 
                 for (_, (chunk, _, _)) in &program_ir.functions {

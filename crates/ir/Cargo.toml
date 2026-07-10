@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 meridian_semantic = { path = "../semantic" }
 meridian_ast = { path = "../ast" }
+meridian_diagnostics = { path = "../diagnostics" }

@@ -1,4 +1,4 @@
 import "math.mer";
 
-let result = add(10, 20);
+let result = add(10.0, 20.0);
 print result;

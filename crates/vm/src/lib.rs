@@ -252,7 +252,7 @@ impl VM {
                         Opcode::Move(dest, src) => {
                             task.registers[base + dest] = task.registers[base + src].clone();
                         }
-                        Opcode::Add(dest, left, right) => {
+                        Opcode::Add(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l + r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -266,7 +266,7 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::Sub(dest, left, right) => {
+                        Opcode::Sub(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l - r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -278,7 +278,7 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::Mul(dest, left, right) => {
+                        Opcode::Mul(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l * r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -290,7 +290,7 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::Div(dest, left, right) => {
+                        Opcode::Div(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 if *r == 0.0 {
                                     return Err(RuntimeError {
@@ -314,15 +314,15 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::Eq(dest, left, right) => {
+                        Opcode::Eq(dest, left, right, _) => {
                             let eq = task.registers[base + left] == task.registers[base + right];
                             task.registers[base + dest] = Value::Bool(eq);
                         }
-                        Opcode::Ne(dest, left, right) => {
+                        Opcode::Ne(dest, left, right, _) => {
                             let eq = task.registers[base + left] == task.registers[base + right];
                             task.registers[base + dest] = Value::Bool(!eq);
                         }
-                        Opcode::Lt(dest, left, right) => {
+                        Opcode::Lt(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l < r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -331,7 +331,7 @@ impl VM {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
-                        Opcode::Le(dest, left, right) => {
+                        Opcode::Le(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l <= r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -340,7 +340,7 @@ impl VM {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
-                        Opcode::Gt(dest, left, right) => {
+                        Opcode::Gt(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l > r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
@@ -349,7 +349,7 @@ impl VM {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
-                        Opcode::Ge(dest, left, right) => {
+                        Opcode::Ge(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l >= r);
                             } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {

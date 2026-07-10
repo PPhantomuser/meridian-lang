@@ -597,6 +597,7 @@ name = "meridian_ir"
 version = "0.1.0"
 dependencies = [
  "meridian_ast",
+ "meridian_diagnostics",
  "meridian_semantic",
 ]
 

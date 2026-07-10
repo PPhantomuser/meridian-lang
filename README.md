@@ -16,7 +16,7 @@ Meridian was born out of a desire for a language that combines the **ergonomics 
 ### ✨ Key Features
 * **Strict Type Safety:** Catch bugs at compile time.
 * **Dual Execution Modes:** Run fast in the VM, or compile to native machine code with Cranelift.
-* **Agentic by Design:** First-class language primitives designed for AI tool-calling and sandboxed execution.
+* **Agentic by Design:** First-class language primitives designed for AI tool-calling, with `unsafe` block boundary marking to isolate side effects.
 * **Predictable Memory Model:** Uses automatic reference counting (ARC) for seamless, GC-pause-free memory management.
 
 ---
