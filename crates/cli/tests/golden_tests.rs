@@ -3,8 +3,8 @@ use std::process::Command;
 #[test]
 fn test_hello_ast() {
     let output = Command::new("cargo")
-        .current_dir("..")
-        .args(["run", "-p", "meridian_cli", "--", "ast", "examples/hello.mer"])
+        .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
+        .args(["run", "--bin", "merid", "--", "ast", "examples/hello.mer"])
         .output()
         .expect("Failed to execute command");
     

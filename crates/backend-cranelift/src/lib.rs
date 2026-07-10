@@ -1,3 +1,4 @@
+#![allow(unused)]
 use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::{
     types, AbiParam, InstBuilder,

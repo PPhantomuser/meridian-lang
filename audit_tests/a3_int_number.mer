@@ -1,0 +1,5 @@
+struct Point { x: Number, y: Number }
+fn main() {
+    let p = Point { x: 10, y: 10.0 };
+}
+main();

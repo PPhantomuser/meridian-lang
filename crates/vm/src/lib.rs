@@ -11,7 +11,7 @@ pub enum Value {
     NativeFunction(usize),
     Reference(usize), // Index into the current task's registers
     Future(usize),    // TaskId
-    NativeObject(std::sync::Arc<std::sync::Mutex<dyn std::any::Any + Send + Sync>>),
+    NativeObject(String, std::sync::Arc<std::sync::Mutex<dyn std::any::Any + Send + Sync>>),
     Struct(String, std::sync::Arc<std::sync::Mutex<HashMap<String, Value>>>),
     Array(std::sync::Arc<std::sync::Mutex<Vec<Value>>>),
     Enum(String, String, Option<Box<Value>>),
@@ -29,7 +29,7 @@ impl std::fmt::Display for Value {
             Value::NativeFunction(_) => write!(f, "<native fn>"),
             Value::Reference(ptr) => write!(f, "<reference to {}>", ptr),
             Value::Future(id) => write!(f, "<Future task_id={}>", id),
-            Value::NativeObject(_) => write!(f, "<NativeObject>"),
+            Value::NativeObject(tag, _) => write!(f, "<NativeObject: {}>", tag),
             Value::Struct(name, fields_arc) => {
                 let fields = fields_arc.lock().unwrap();
                 write!(f, "{} {{ ", name)?;
@@ -79,7 +79,7 @@ impl PartialEq for Value {
             (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
             (Value::Reference(a), Value::Reference(b)) => a == b,
             (Value::Future(a), Value::Future(b)) => a == b,
-            (Value::NativeObject(a), Value::NativeObject(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::NativeObject(tag_a, a), Value::NativeObject(tag_b, b)) => tag_a == tag_b && std::sync::Arc::ptr_eq(a, b),
             (Value::Struct(_, a), Value::Struct(_, b)) => std::sync::Arc::ptr_eq(a, b),
             (Value::Array(a), Value::Array(b)) => std::sync::Arc::ptr_eq(a, b),
             (Value::Enum(e1, v1, val1), Value::Enum(e2, v2, val2)) => e1 == e2 && v1 == v2 && val1 == val2,

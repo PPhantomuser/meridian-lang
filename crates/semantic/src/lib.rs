@@ -37,12 +37,14 @@ struct MacroDefinition {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct StructSignature {
     fields: HashMap<String, Type>,
     span: Span,
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct EnumSignature {
     variants: HashMap<String, Option<Type>>,
     span: Span,
@@ -79,28 +81,30 @@ impl SemanticAnalyzer {
         };
         // Register standard library
         let native_funcs = vec![
+            ("print", vec![Type::Unknown], Type::Unit),
             ("read_file", vec![Type::String], Type::Result(Box::new(Type::String), Box::new(Type::String))),
-            ("hashmap_new", vec![], Type::Unknown),
-            ("hashmap_insert", vec![Type::Unknown, Type::String, Type::Unknown], Type::Unknown),
-            ("hashmap_get", vec![Type::Unknown, Type::String], Type::Option(Box::new(Type::Unknown))),
-            ("hashset_new", vec![], Type::Unknown),
-            ("hashset_insert", vec![Type::Unknown, Type::String], Type::Unknown),
-            ("hashset_contains", vec![Type::Unknown, Type::String], Type::Bool),
-            ("vecdeque_new", vec![], Type::Unknown),
-            ("vecdeque_push_back", vec![Type::Unknown, Type::Unknown], Type::Unknown),
-            ("vecdeque_pop_front", vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
-            ("tcp_bind", vec![Type::String], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
-            ("tcp_accept", vec![Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
-            ("tcp_read", vec![Type::Unknown], Type::Result(Box::new(Type::String), Box::new(Type::String))),
-            ("tcp_write", vec![Type::Unknown, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
+            ("assert", vec![Type::Bool], Type::Unit),
+            ("hashmap_new", vec![], Type::Native("HashMap".to_string())),
+            ("hashmap_insert", vec![Type::Native("HashMap".to_string()), Type::String, Type::Unknown], Type::Unknown),
+            ("hashmap_get", vec![Type::Native("HashMap".to_string()), Type::String], Type::Option(Box::new(Type::Unknown))),
+            ("hashset_new", vec![], Type::Native("HashSet".to_string())),
+            ("hashset_insert", vec![Type::Native("HashSet".to_string()), Type::String], Type::Unknown),
+            ("hashset_contains", vec![Type::Native("HashSet".to_string()), Type::String], Type::Bool),
+            ("vecdeque_new", vec![], Type::Native("VecDeque".to_string())),
+            ("vecdeque_push_back", vec![Type::Native("VecDeque".to_string()), Type::Unknown], Type::Unknown),
+            ("vecdeque_pop_front", vec![Type::Native("VecDeque".to_string())], Type::Option(Box::new(Type::Unknown))),
+            ("tcp_bind", vec![Type::String], Type::Result(Box::new(Type::Native("TcpListener".to_string())), Box::new(Type::String))),
+            ("tcp_accept", vec![Type::Native("TcpListener".to_string())], Type::Result(Box::new(Type::Native("TcpStream".to_string())), Box::new(Type::String))),
+            ("tcp_read", vec![Type::Native("TcpStream".to_string())], Type::Result(Box::new(Type::String), Box::new(Type::String))),
+            ("tcp_write", vec![Type::Native("TcpStream".to_string()), Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
             ("file_write", vec![Type::String, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
             ("file_append", vec![Type::String, Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
             ("file_delete", vec![Type::String], Type::Result(Box::new(Type::Bool), Box::new(Type::String))),
             ("file_exists", vec![Type::String], Type::Bool),
             ("process_output", vec![Type::String, Type::Unknown], Type::Result(Box::new(Type::String), Box::new(Type::String))),
-            ("dlopen", vec![Type::String], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
-            ("dlsym", vec![Type::Unknown, Type::String, Type::String], Type::Option(Box::new(Type::Unknown))),
-            ("dlcall", vec![Type::Unknown, Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
+            ("dlopen", vec![Type::String], Type::Result(Box::new(Type::Native("Library".to_string())), Box::new(Type::String))),
+            ("dlsym", vec![Type::Native("Library".to_string()), Type::String, Type::String], Type::Option(Box::new(Type::Native("Function".to_string())))),
+            ("dlcall", vec![Type::Native("Function".to_string()), Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
         ];
 
         for (name, params, ret) in native_funcs {
@@ -453,6 +457,15 @@ impl SemanticAnalyzer {
             Expr::Bool(_, _) => Type::Bool,
             Expr::Identifier(name, span) => {
                 if let Some(info) = self.lookup_variable(name) {
+                    if info.borrows.contains(&BorrowKind::Exclusive) {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Cannot move or access variable '{}' because it is mutably borrowed", name),
+                            "MER0156".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            Some("Wait for the mutable borrow to end before accessing.".to_string()),
+                        ));
+                    }
                     self.index.usages.insert(*span, info.span);
                     info.ty
                 } else {
@@ -599,6 +612,14 @@ impl SemanticAnalyzer {
                                 DiagnosticCategory::Semantic,
                                 Some("Make the variable mutable with 'let mut'.".to_string()),
                             ));
+                        } else if !info.borrows.is_empty() {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Cannot mutate variable '{}' because it is currently borrowed", name),
+                                "MER0156".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                Some("Wait for the borrow to end before mutating.".to_string()),
+                            ));
                         } else if !self.types_compatible(&info.ty, &val_ty) {
                             self.diagnostics.push(Diagnostic::new(
                                 format!("Type mismatch: cannot assign type {:?} to variable of type {:?}", val_ty, info.ty),
@@ -644,27 +665,30 @@ impl SemanticAnalyzer {
                 if let Expr::Identifier(name, callee_span) = &**callee {
                     if let Some(signature) = self.functions.get(name).cloned() {
                         self.index.usages.insert(*callee_span, signature.span);
-                        if signature.is_extern && !self.in_unsafe_block {
+                        let unsafe_funcs = [
+                            "process_output", "process_spawn", "tcp_bind", "tcp_accept", "tcp_read", "tcp_write",
+                            "file_write", "file_append", "file_delete", "file_exists", "read_file",
+                            "dlopen", "dlsym", "dlcall"
+                        ];
+                        
+                        if (signature.is_extern || unsafe_funcs.contains(&name.as_str())) && !self.in_unsafe_block {
                             self.diagnostics.push(Diagnostic::new(
-                                format!("Call to external function '{}' is unsafe and requires an unsafe block", name),
+                                format!("Call to unsafe system function '{}' requires an unsafe block", name),
                                 "MER0150".to_string(),
                                 *span,
                                 DiagnosticCategory::Semantic,
                                 Some("Wrap the call in an unsafe { ... } block.".to_string()),
                             ));
                         }
+                        
                         if self.macro_expansion_depth > 0 {
-                            let unsafe_funcs = [
-                                "process_output", "process_spawn", "tcp_bind", "tcp_accept", "tcp_read", "tcp_write",
-                                "file_write", "file_append", "file_delete", "file_exists", "read_file"
-                            ];
                             if unsafe_funcs.contains(&name.as_str()) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Macro expansion resulted in a call to unsafe system function '{}'", name),
-                                    "MER0151".to_string(),
+                                    "MER0155".to_string(),
                                     *span,
                                     DiagnosticCategory::Semantic,
-                                    Some("System calls within macros are restricted by the Safe Harbor policies.".to_string()),
+                                    Some("Macros are sandboxed and cannot invoke file/net I/O".to_string()),
                                 ));
                             }
                         }
@@ -790,7 +814,7 @@ impl SemanticAnalyzer {
             }
             Expr::AsyncBlock { statements, span: _ } => {
                 self.enter_scope();
-                let mut last_type = Type::Unit;
+                let last_type = Type::Unit;
                 for stmt in statements {
                     self.analyze_statement(stmt);
                 }
@@ -1036,7 +1060,7 @@ impl SemanticAnalyzer {
                     Type::Unknown
                 }
             }
-            Expr::Match { value, arms, span } => {
+            Expr::Match { value, arms, span: _ } => {
                 let val_ty = self.analyze_expression(value);
                 let mut return_type = Type::Unknown;
                 for (pat, expr) in arms {

@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::io::{self, Read, Write, BufRead};
 use serde_json::{Value, json};
 

@@ -451,6 +451,17 @@ impl<'a> Parser<'a> {
         };
         self.advance(); // consume name
 
+        // A6: Skip generic type parameters `<T, U>`
+        if self.current_token.kind == TokenKind::LessThan {
+            self.advance();
+            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
+                self.advance();
+            }
+            if self.current_token.kind == TokenKind::GreaterThan {
+                self.advance();
+            }
+        }
+
         if self.current_token.kind != TokenKind::LParen {
             self.diagnostics.push(Diagnostic::new(
                 "Expected '(' after function name".to_string(),
@@ -1969,7 +1980,7 @@ mod tests {
 
     #[test]
     fn test_parse_let() {
-        let lexer = Lexer::new("let mut x: Number = 42;");
+        let lexer = Lexer::new("let mut x: Int = 42;");
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
         assert_eq!(parser.diagnostics.len(), 0);
@@ -1979,11 +1990,11 @@ mod tests {
             Stmt::Let { name, mutable, type_annotation, initializer, .. } => {
                 assert_eq!(name, "x");
                 assert_eq!(*mutable, true);
-                assert_eq!(*type_annotation, Some(Type::Number));
-                if let Expr::Number(n, _) = initializer {
-                    assert_eq!(*n, 42.0);
+                assert_eq!(*type_annotation, Some(Type::Int));
+                if let Expr::Int(n, _) = initializer {
+                    assert_eq!(*n, 42);
                 } else {
-                    panic!("Expected Number");
+                    panic!("Expected Int");
                 }
             }
             _ => panic!("Expected Let statement"),

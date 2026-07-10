@@ -1,0 +1,11 @@
+#[test]
+fn test_addition() {
+    let a = 1;
+    let b = 2;
+    assert(a + b == 3);
+}
+
+#[test]
+fn test_failure() {
+    assert(false);
+}

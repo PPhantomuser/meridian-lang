@@ -60,11 +60,11 @@ pub fn publish_package(
     let enc = GzEncoder::new(tar_gz, Compression::default());
     let mut tar = Builder::new(enc);
     
-    let toml_path = project_dir.join("meridian.toml");
+    let toml_path = project_dir.join("Meridian.toml");
     if toml_path.exists() {
-        tar.append_path_with_name(&toml_path, "meridian.toml").map_err(|e| format!("Failed to add toml: {}", e))?;
+        tar.append_path_with_name(&toml_path, "Meridian.toml").map_err(|e| format!("Failed to add toml: {}", e))?;
     } else {
-        return Err("meridian.toml not found".to_string());
+        return Err("Meridian.toml not found".to_string());
     }
     
     let src_dir = project_dir.join("src");

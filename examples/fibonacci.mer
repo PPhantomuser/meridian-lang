@@ -1,4 +1,4 @@
-fn fib(n: Number) -> Number {
+fn fib(n: Int) -> Int {
     if n == 0 {
         0
     } else if n == 1 {

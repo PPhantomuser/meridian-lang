@@ -1,0 +1,6 @@
+fn main() {
+    let d = vecdeque_new();
+    // hashmap_insert takes (map, key, value)
+    hashmap_insert(d, "key", 42);
+}
+main();

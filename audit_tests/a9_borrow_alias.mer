@@ -1,0 +1,8 @@
+fn consume(x: Number) -> Number { x }
+fn main() {
+    let mut x = 5.0;
+    let r = &mut x;
+    let y = consume(x);
+    print *r;
+}
+main();

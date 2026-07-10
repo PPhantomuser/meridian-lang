@@ -1,3 +1,4 @@
+#![allow(unused)]
 pub mod manifest;
 pub mod diagnostics;
 pub mod fetch;
@@ -76,7 +77,7 @@ pub fn solve(
                             resolved_paths.insert(name.clone(), checkout_dir);
                             locked_packages.push(LockedPackage {
                                 name: name.clone(),
-                                version: "0.0.0".to_string(), // we might read the package's meridian.toml to get its actual version
+                                version: "0.0.0".to_string(), // we might read the package's Meridian.toml to get its actual version
                                 source: format!("git+{}#{}", git, rev.as_deref().unwrap_or("HEAD")),
                                 checksum: computed_checksum,
                                 dependencies: vec![],

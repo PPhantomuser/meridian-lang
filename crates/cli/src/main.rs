@@ -1,3 +1,4 @@
+#![allow(unused)]
 use clap::{Parser as ClapParser, Subcommand};
 use meridian_lexer::Lexer;
 use meridian_parser::Parser;
@@ -135,7 +136,7 @@ fn load_module(
         if let Stmt::Import(import_path, span) = stmt {
             let mut next_path = parent_dir.join(&import_path);
             
-            // Check if it's a dependency from meridian.toml
+            // Check if it's a dependency from Meridian.toml
             if !next_path.exists() {
                 if let Some(paths) = resolved_paths {
                     if let Some(dep_path) = paths.get(&import_path) {
@@ -175,14 +176,14 @@ fn main() {
     match &cli.command {
         Commands::Audit => {
             let current_dir = std::env::current_dir().unwrap();
-            let toml_path = current_dir.join("meridian.toml");
+            let toml_path = current_dir.join("Meridian.toml");
             if !toml_path.exists() {
-                eprintln!("Error: meridian.toml not found");
+                eprintln!("Error: Meridian.toml not found");
                 std::process::exit(1);
             }
             let toml_str = fs::read_to_string(&toml_path).unwrap();
             let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
-                eprintln!("Failed to parse meridian.toml: {}", e);
+                eprintln!("Failed to parse Meridian.toml: {}", e);
                 std::process::exit(1);
             });
             
@@ -217,14 +218,14 @@ fn main() {
         }
         Commands::Fetch => {
             let current_dir = std::env::current_dir().unwrap();
-            let toml_path = current_dir.join("meridian.toml");
+            let toml_path = current_dir.join("Meridian.toml");
             if !toml_path.exists() {
-                eprintln!("Error: meridian.toml not found");
+                eprintln!("Error: Meridian.toml not found");
                 std::process::exit(1);
             }
             let toml_str = fs::read_to_string(&toml_path).unwrap();
             let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
-                eprintln!("Failed to parse meridian.toml: {}", e);
+                eprintln!("Failed to parse Meridian.toml: {}", e);
                 std::process::exit(1);
             });
             
@@ -251,7 +252,7 @@ fn main() {
                 entry_file = PathBuf::from(f);
             } else {
                 let current_dir = std::env::current_dir().unwrap();
-                let toml_path = current_dir.join("meridian.toml");
+                let toml_path = current_dir.join("Meridian.toml");
                 if toml_path.exists() {
                     let toml_str = fs::read_to_string(&toml_path).unwrap();
                     let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap();
@@ -266,7 +267,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 } else {
-                    eprintln!("Error: No file specified and no meridian.toml found");
+                    eprintln!("Error: No file specified and no Meridian.toml found");
                     std::process::exit(1);
                 }
             }
@@ -336,9 +337,9 @@ void print_f64(double val) {
             if let Some(f) = file {
                 entry_file = PathBuf::from(f);
             } else {
-                // Look for meridian.toml
+                // Look for Meridian.toml
                 let current_dir = std::env::current_dir().unwrap();
-                let toml_path = current_dir.join("meridian.toml");
+                let toml_path = current_dir.join("Meridian.toml");
                 if toml_path.exists() {
                     let toml_str = fs::read_to_string(&toml_path).unwrap();
                     match toml::from_str::<resolver::manifest::MeridianManifest>(&toml_str) {
@@ -364,12 +365,12 @@ void print_f64(double val) {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to parse meridian.toml: {}", e);
+                            eprintln!("Failed to parse Meridian.toml: {}", e);
                             std::process::exit(1);
                         }
                     }
                 } else {
-                    eprintln!("Error: No file specified and no meridian.toml found in current directory");
+                    eprintln!("Error: No file specified and no Meridian.toml found in current directory");
                     std::process::exit(1);
                 }
             }
@@ -630,15 +631,15 @@ void print_f64(double val) {
         }
         Commands::Publish => {
             let current_dir = std::env::current_dir().unwrap();
-            let toml_path = current_dir.join("meridian.toml");
+            let toml_path = current_dir.join("Meridian.toml");
             if !toml_path.exists() {
-                eprintln!("Error: meridian.toml not found in current directory.");
+                eprintln!("Error: Meridian.toml not found in current directory.");
                 std::process::exit(1);
             }
             
             let toml_str = fs::read_to_string(&toml_path).unwrap();
             let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
-                eprintln!("Error parsing meridian.toml: {}", e);
+                eprintln!("Error parsing Meridian.toml: {}", e);
                 std::process::exit(1);
             });
             

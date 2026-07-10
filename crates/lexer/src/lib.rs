@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(lexer.next_token().kind, TokenKind::Mut);
         assert_eq!(lexer.next_token().kind, TokenKind::Identifier("x".to_string()));
         assert_eq!(lexer.next_token().kind, TokenKind::Equal);
-        assert_eq!(lexer.next_token().kind, TokenKind::Number(42.0));
+        assert_eq!(lexer.next_token().kind, TokenKind::Int(42));
         assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
         assert_eq!(lexer.next_token().kind, TokenKind::EOF);
         assert!(lexer.diagnostics.is_empty());

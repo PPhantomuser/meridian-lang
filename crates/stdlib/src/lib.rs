@@ -19,7 +19,26 @@ pub fn register_all(vm: &mut VM) {
         }),
     );
 
-    // HashMap
+    // assert
+    vm.register_native_function(
+        "assert",
+        Box::new(|args: &[Value]| {
+            if args.is_empty() {
+                return Value::Error("assert expects 1 argument".to_string());
+            }
+            if let Value::Bool(b) = args[0] {
+                if b {
+                    Value::Null
+                } else {
+                    Value::Error("Assertion failed".to_string())
+                }
+            } else {
+                Value::Error("assert expects a boolean argument".to_string())
+            }
+        }),
+    );
+
+    // hashmap_new
     vm.register_native_function(
         "hashmap_new",
         Box::new(|args: &[Value]| {
@@ -27,7 +46,7 @@ pub fn register_all(vm: &mut VM) {
                 return Value::Error("hashmap_new expects 0 arguments".to_string());
             }
             let map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
-            Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(map)))
+            Value::NativeObject("HashMap".to_string(), std::sync::Arc::new(std::sync::Mutex::new(map)))
         }),
     );
 
@@ -37,7 +56,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 3 {
                 return Value::Error("hashmap_insert expects 3 arguments (map, key, value)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let Value::String(key) = &args[1] {
                     let mut guard = obj.lock().unwrap();
                     if let Some(map) = guard.downcast_mut::<std::collections::HashMap<String, Value>>() {
@@ -56,7 +75,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("hashmap_get expects 2 arguments (map, key)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let Value::String(key) = &args[1] {
                     let guard = obj.lock().unwrap();
                     if let Some(map) = guard.downcast_ref::<std::collections::HashMap<String, Value>>() {
@@ -80,7 +99,7 @@ pub fn register_all(vm: &mut VM) {
                 return Value::Error("hashset_new expects 0 arguments".to_string());
             }
             let set: std::collections::HashSet<String> = std::collections::HashSet::new();
-            Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(set)))
+            Value::NativeObject("HashSet".to_string(), std::sync::Arc::new(std::sync::Mutex::new(set)))
         }),
     );
 
@@ -90,7 +109,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("hashset_insert expects 2 arguments (set, value)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let Value::String(val) = &args[1] {
                     let mut guard = obj.lock().unwrap();
                     if let Some(set) = guard.downcast_mut::<std::collections::HashSet<String>>() {
@@ -109,7 +128,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("hashset_contains expects 2 arguments (set, value)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let Value::String(val) = &args[1] {
                     let guard = obj.lock().unwrap();
                     if let Some(set) = guard.downcast_ref::<std::collections::HashSet<String>>() {
@@ -129,7 +148,7 @@ pub fn register_all(vm: &mut VM) {
                 return Value::Error("vecdeque_new expects 0 arguments".to_string());
             }
             let deque: std::collections::VecDeque<Value> = std::collections::VecDeque::new();
-            Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(deque)))
+            Value::NativeObject("VecDeque".to_string(), std::sync::Arc::new(std::sync::Mutex::new(deque)))
         }),
     );
 
@@ -139,7 +158,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("vecdeque_push_back expects 2 arguments (deque, value)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(deque) = guard.downcast_mut::<std::collections::VecDeque<Value>>() {
                     deque.push_back(args[1].clone());
@@ -156,7 +175,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 1 {
                 return Value::Error("vecdeque_pop_front expects 1 argument (deque)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(deque) = guard.downcast_mut::<std::collections::VecDeque<Value>>() {
                     if let Some(val) = deque.pop_front() {
@@ -180,7 +199,7 @@ pub fn register_all(vm: &mut VM) {
             if let Value::String(s) = &args[0] {
                 let parsed: Result<serde_json::Value, _> = serde_json::from_str(s);
                 match parsed {
-                    Ok(val) => Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(val))),
+                    Ok(val) => Value::NativeObject("Unknown".to_string(), std::sync::Arc::new(std::sync::Mutex::new(val))),
                     Err(_) => Value::Null,
                 }
             } else {
@@ -195,7 +214,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 1 {
                 return Value::Error("json_stringify expects 1 argument (json_object)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let guard = obj.lock().unwrap();
                 if let Some(val) = guard.downcast_ref::<serde_json::Value>() {
                     let s = serde_json::to_string(val).unwrap_or_else(|_| "null".to_string());
@@ -216,7 +235,7 @@ pub fn register_all(vm: &mut VM) {
             if let Value::String(addr) = &args[0] {
                 match std::net::TcpListener::bind(addr) {
                     Ok(listener) => {
-                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(listener))))))
+                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("TcpListener".to_string(), std::sync::Arc::new(std::sync::Mutex::new(listener))))))
                     }
                     Err(e) => {
                         Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
@@ -234,12 +253,12 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 1 {
                 return Value::Error("tcp_accept expects 1 argument (listener)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(listener) = guard.downcast_mut::<std::net::TcpListener>() {
                     match listener.accept() {
                         Ok((stream, _addr)) => {
-                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(stream))))))
+                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("TcpStream".to_string(), std::sync::Arc::new(std::sync::Mutex::new(stream))))))
                         }
                         Err(e) => {
                             Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
@@ -261,7 +280,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 1 {
                 return Value::Error("tcp_read expects 1 argument (stream)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let mut guard = obj.lock().unwrap();
                 if let Some(stream) = guard.downcast_mut::<std::net::TcpStream>() {
                     let mut buffer = [0; 1024];
@@ -290,7 +309,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("tcp_write expects 2 arguments (stream, data)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let Value::String(data) = &args[1] {
                     let mut guard = obj.lock().unwrap();
                     if let Some(stream) = guard.downcast_mut::<std::net::TcpStream>() {
@@ -393,7 +412,7 @@ pub fn register_all(vm: &mut VM) {
             }
             if let Value::String(cmd) = &args[0] {
                 let mut command = std::process::Command::new(cmd);
-                if let Value::NativeObject(obj) = &args[1] {
+                if let Value::NativeObject(_, obj) = &args[1] {
                     let guard = obj.lock().unwrap();
                     if let Some(deque) = guard.downcast_ref::<std::collections::VecDeque<Value>>() {
                         for arg in deque.iter() {
@@ -431,7 +450,7 @@ pub fn register_all(vm: &mut VM) {
             if let Value::String(path) = &args[0] {
                 unsafe {
                     match libloading::Library::new(path) {
-                        Ok(lib) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(lib)))))),
+                        Ok(lib) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("Library".to_string(), std::sync::Arc::new(std::sync::Mutex::new(lib)))))),
                         Err(e) => {
                             Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
                         }
@@ -449,7 +468,7 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 3 {
                 return Value::Error("dlsym expects 3 arguments (library, symbol_name, signature)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 if let (Value::String(sym), Value::String(sig)) = (&args[1], &args[2]) {
                     let guard = obj.lock().unwrap();
                     if let Some(lib) = guard.downcast_ref::<libloading::Library>() {
@@ -462,9 +481,9 @@ pub fn register_all(vm: &mut VM) {
                                         ptr,
                                         signature: sig.clone(),
                                     };
-                                    return Value::Enum("Option".into(), "Some".into(), Some(Box::new(Value::NativeObject(std::sync::Arc::new(std::sync::Mutex::new(func))))));
+                                    return Value::Enum("Option".into(), "Some".into(), Some(Box::new(Value::NativeObject("Function".to_string(), std::sync::Arc::new(std::sync::Mutex::new(func))))));
                                 }
-                                Err(e) => {
+                                Err(_e) => {
                                     return Value::Enum("Option".into(), "None".into(), None);
                                 }
                             }
@@ -487,10 +506,10 @@ pub fn register_all(vm: &mut VM) {
             if args.len() != 2 {
                 return Value::Error("dlcall expects 2 arguments (function, vecdeque_args)".to_string());
             }
-            if let Value::NativeObject(obj) = &args[0] {
+            if let Value::NativeObject(_, obj) = &args[0] {
                 let guard = obj.lock().unwrap();
                 if let Some(func) = guard.downcast_ref::<FFIFunction>() {
-                    if let Value::NativeObject(args_obj) = &args[1] {
+                    if let Value::NativeObject(_, args_obj) = &args[1] {
                         let args_guard = args_obj.lock().unwrap();
                         if let Some(deque) = args_guard.downcast_ref::<std::collections::VecDeque<Value>>() {
                             // Match signatures

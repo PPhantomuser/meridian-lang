@@ -151,6 +151,12 @@ impl Compiler {
             self.compile_stmt(stmt);
         }
 
+        // A10: Auto-call main if explicitly defined
+        if self.program_ir.functions.contains_key("main") {
+            let ret_reg = self.alloc_reg();
+            self.current_chunk.instructions.push(Opcode::Call(ret_reg, "main".to_string(), 0, 0));
+        }
+
         self.program_ir.main_chunk = self.current_chunk;
         self.program_ir
     }
@@ -363,7 +369,7 @@ impl Compiler {
                             self.locals = old_locals;
                             break; // CatchAll must be last semantically
                         }
-                        Pattern::EnumVariant { enum_name, variant_name, binding_name, .. } => {
+                        Pattern::EnumVariant { enum_name: _, variant_name, binding_name, .. } => {
                             let check_reg = self.alloc_reg();
                             self.current_chunk.instructions.push(Opcode::CheckEnum(check_reg, val_reg, variant_name.clone()));
                             
