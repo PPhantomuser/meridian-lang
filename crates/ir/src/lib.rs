@@ -1,4 +1,4 @@
-use meridian_ast::{BinaryOperator, Expr, Program, Stmt};
+use meridian_ast::{BinaryOperator, Expr, Program, Stmt, Type};
 use std::collections::HashMap;
 
 pub type Register = usize;
@@ -23,7 +23,7 @@ pub enum Opcode {
     Jump(Offset),                      // target_offset
     Call(Register, String, Register, usize), // dest, function_name, arg_start_reg, arg_count
     Return(Register),                  // src
-    Print(Register),                   // src
+    Print(Register, bool),             // src, is_float
     Borrow(Register, Register),        // dest, src_reg
     Dereference(Register, Register),   // dest, src_reg
     AsyncCall(Register, String, Register, usize), // dest, func, arg_start, count
@@ -35,9 +35,9 @@ pub enum Opcode {
     MakeArray(Register, Register, usize), // dest, first_elem_reg, count
     ArrayIndex(Register, Register, Register), // dest, obj, index
     ArrayAssign(Register, Register, Register), // obj, index, value
-    MakeEnum(Register, String, String, Option<Register>), // dest, enum_name, variant_name, value_reg
+    MakeEnum(Register, String, String, Register, usize), // dest, enum_name, variant_name, value_start_reg, count
     CheckEnum(Register, Register, String), // dest (bool), obj, variant_name
-    ExtractEnum(Register, Register), // dest, obj (gets inner value)
+    ExtractEnum(Register, Register, usize), // dest_start, obj (gets inner values), count
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,8 +181,13 @@ impl Compiler {
                 self.locals.insert(name.clone(), val_reg);
             }
             Stmt::Print(expr, _) => {
+                let is_float = if let Some(ty) = self.type_map.get(&expr.span()) {
+                    matches!(ty, Type::Number)
+                } else {
+                    true
+                };
                 let reg = self.compile_expr(expr);
-                self.current_chunk.instructions.push(Opcode::Print(reg));
+                self.current_chunk.instructions.push(Opcode::Print(reg, is_float));
             }
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
@@ -358,14 +363,17 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::LoadConst(dest, const_idx));
                 dest
             }
-            Expr::EnumInit { enum_name, variant_name, value, .. } => {
-                let val_reg = if let Some(v) = value {
-                    Some(self.compile_expr(v))
-                } else {
-                    None
-                };
+            Expr::EnumInit { enum_name, variant_name, values, .. } => {
+                let start_reg = self.next_reg;
+                for v in values {
+                    let r = self.alloc_reg();
+                    let vr = self.compile_expr(v);
+                    if vr != r {
+                        self.current_chunk.instructions.push(Opcode::Move(r, vr));
+                    }
+                }
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), val_reg));
+                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), start_reg, values.len()));
                 dest
             }
             Expr::Match { value, arms, .. } => {
@@ -388,17 +396,20 @@ impl Compiler {
                             self.locals = old_locals;
                             break; // CatchAll must be last semantically
                         }
-                        Pattern::EnumVariant { enum_name: _, variant_name, binding_name, .. } => {
+                        Pattern::EnumVariant { enum_name: _, variant_name, binding_names, .. } => {
                             let check_reg = self.alloc_reg();
                             self.current_chunk.instructions.push(Opcode::CheckEnum(check_reg, val_reg, variant_name.clone()));
                             
                             let jmp_next = self.current_chunk.instructions.len();
                             self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
                             
-                            if let Some(b_name) = binding_name {
-                                let bound_reg = self.alloc_reg();
-                                self.locals.insert(b_name.clone(), bound_reg);
-                                self.current_chunk.instructions.push(Opcode::ExtractEnum(bound_reg, val_reg));
+                            if !binding_names.is_empty() {
+                                let start_reg = self.next_reg;
+                                for b_name in binding_names {
+                                    let bound_reg = self.alloc_reg();
+                                    self.locals.insert(b_name.clone(), bound_reg);
+                                }
+                                self.current_chunk.instructions.push(Opcode::ExtractEnum(start_reg, val_reg, binding_names.len()));
                             }
                             
                             let res_reg = self.compile_expr(expr);

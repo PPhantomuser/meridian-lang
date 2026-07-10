@@ -149,12 +149,15 @@ impl Formatter {
                 self.push_indent();
                 self.output.push_str(&format!("enum {} {{\n", name));
                 self.indent_level += 1;
-                for (variant_name, variant_type) in variants {
+                for (variant_name, variant_types) in variants {
                     self.push_indent();
                     self.output.push_str(variant_name);
-                    if let Some(ty) = variant_type {
+                    if !variant_types.is_empty() {
                         self.output.push_str("(");
-                        self.format_type(ty);
+                        for (i, ty) in variant_types.iter().enumerate() {
+                            if i > 0 { self.output.push_str(", "); }
+                            self.format_type(ty);
+                        }
                         self.output.push_str(")");
                     }
                     self.output.push_str(",\n");
@@ -443,14 +446,17 @@ impl Formatter {
                 self.push_indent();
                 self.output.push('}');
             }
-            Expr::EnumInit { enum_name, variant_name, value, .. } => {
+            Expr::EnumInit { enum_name, variant_name, values, .. } => {
                 self.output.push_str(enum_name);
                 self.output.push_str("::");
                 self.output.push_str(variant_name);
-                if let Some(val) = value {
-                    self.output.push('(');
-                    self.format_expr(val);
-                    self.output.push(')');
+                if !values.is_empty() {
+                    self.output.push_str("(");
+                    for (i, v) in values.iter().enumerate() {
+                        if i > 0 { self.output.push_str(", "); }
+                        self.format_expr(v);
+                    }
+                    self.output.push_str(")");
                 }
             }
         }
@@ -460,14 +466,17 @@ impl Formatter {
         match pat {
             meridian_ast::Pattern::CatchAll(_) => self.output.push('_'),
             meridian_ast::Pattern::Identifier(name, _) => self.output.push_str(name),
-            meridian_ast::Pattern::EnumVariant { enum_name, variant_name, binding_name, .. } => {
+            meridian_ast::Pattern::EnumVariant { enum_name, variant_name, binding_names, .. } => {
                 self.output.push_str(enum_name);
                 self.output.push_str("::");
                 self.output.push_str(variant_name);
-                if let Some(b) = binding_name {
-                    self.output.push('(');
-                    self.output.push_str(b);
-                    self.output.push(')');
+                if !binding_names.is_empty() {
+                    self.output.push_str("(");
+                    for (i, b) in binding_names.iter().enumerate() {
+                        if i > 0 { self.output.push_str(", "); }
+                        self.output.push_str(b);
+                    }
+                    self.output.push_str(")");
                 }
             }
             meridian_ast::Pattern::Number(n, _) => self.output.push_str(&n.to_string()),

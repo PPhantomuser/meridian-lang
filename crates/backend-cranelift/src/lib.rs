@@ -21,6 +21,7 @@ pub struct JITCompiler {
     builder_context: FunctionBuilderContext,
     functions: HashMap<String, FuncId>,
     print_func_id: FuncId,
+    print_i64_func_id: FuncId,
 }
 
 impl JITCompiler {
@@ -36,6 +37,7 @@ impl JITCompiler {
         
         // Define native print symbol and bind it to our Rust function
         builder.symbol("print_f64", print_f64 as *const u8);
+        builder.symbol("print_i64", print_i64 as *const u8);
         
         let mut module = JITModule::new(builder);
         
@@ -48,6 +50,12 @@ impl JITCompiler {
             .declare_function("print_f64", Linkage::Import, &print_sig)
             .unwrap();
 
+        let mut print_i64_sig = module.make_signature();
+        print_i64_sig.params.push(AbiParam::new(types::I64));
+        let print_i64_func_id = module
+            .declare_function("print_i64", Linkage::Import, &print_i64_sig)
+            .unwrap();
+
         let ctx = module.make_context();
 
         Self {
@@ -56,6 +64,7 @@ impl JITCompiler {
             builder_context: FunctionBuilderContext::new(),
             functions: HashMap::new(),
             print_func_id,
+            print_i64_func_id,
         }
     }
 
@@ -286,10 +295,15 @@ impl JITCompiler {
                     builder.ins().jump(target_block, &[]);
                     block_terminated = true;
                 }
-                Opcode::Print(src) => {
+                Opcode::Print(src, is_float) => {
                     let val = builder.use_var(Variable::new(*src));
-                    let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
-                    builder.ins().call(local_print, &[val]);
+                    if *is_float {
+                        let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
+                        builder.ins().call(local_print, &[val]);
+                    } else {
+                        let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
+                        builder.ins().call(local_print_i64, &[val]);
+                    }
                 }
                 Opcode::Call(dest, func_name, arg_start, arg_count) => {
                     if let Some(func_id) = self.functions.get(func_name) {
@@ -351,5 +365,9 @@ impl JITCompiler {
 }
 
 pub extern "C" fn print_f64(n: f64) {
+    println!("{}", n);
+}
+
+pub extern "C" fn print_i64(n: i64) {
     println!("{}", n);
 }

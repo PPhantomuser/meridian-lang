@@ -18,6 +18,7 @@ pub struct AOTCompiler {
     builder_context: FunctionBuilderContext,
     functions: HashMap<String, FuncId>,
     print_func_id: FuncId,
+    print_i64_func_id: FuncId,
 }
 
 impl AOTCompiler {
@@ -47,6 +48,12 @@ impl AOTCompiler {
             .declare_function("print_f64", Linkage::Import, &print_sig)
             .unwrap();
 
+        let mut print_i64_sig = module.make_signature();
+        print_i64_sig.params.push(AbiParam::new(types::I64));
+        let print_i64_func_id = module
+            .declare_function("print_i64", Linkage::Import, &print_i64_sig)
+            .unwrap();
+
         let ctx = module.make_context();
 
         Self {
@@ -55,6 +62,7 @@ impl AOTCompiler {
             builder_context: FunctionBuilderContext::new(),
             functions: HashMap::new(),
             print_func_id,
+            print_i64_func_id,
         }
     }
 
@@ -65,7 +73,8 @@ impl AOTCompiler {
                 sig.params.push(AbiParam::new(types::F64));
             }
             sig.returns.push(AbiParam::new(types::F64));
-            let func_id = self.module.declare_function(name, Linkage::Export, &sig).unwrap();
+            let export_name = if name == "main" { "meridian_user_main" } else { name.as_str() };
+            let func_id = self.module.declare_function(export_name, Linkage::Export, &sig).unwrap();
             self.functions.insert(name.clone(), func_id);
         }
 
@@ -153,12 +162,18 @@ impl AOTCompiler {
 
             match inst {
                 Opcode::LoadConst(dest, const_idx) => {
-                    let val = match &chunk.constants[*const_idx] {
-                        ConstValue::Number(n) => builder.ins().f64const(*n),
-                        ConstValue::Bool(b) => builder.ins().f64const(if *b { 1.0 } else { 0.0 }),
-                        _ => builder.ins().f64const(0.0),
+                    let val_i64 = match &chunk.constants[*const_idx] {
+                        ConstValue::Number(n) => {
+                            let f = builder.ins().f64const(*n);
+                            builder.ins().bitcast(types::I64, MemFlags::new(), f)
+                        }
+                        ConstValue::Int(n) => builder.ins().iconst(types::I64, *n),
+                        ConstValue::Bool(b) => {
+                            let f = builder.ins().f64const(if *b { 1.0 } else { 0.0 });
+                            builder.ins().bitcast(types::I64, MemFlags::new(), f)
+                        }
+                        _ => builder.ins().iconst(types::I64, 0),
                     };
-                    let val_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val);
                     builder.ins().stack_store(val_i64, slots[*dest], 0);
                 }
                 Opcode::Move(dest, src) => {
@@ -193,11 +208,16 @@ impl AOTCompiler {
                         builder.ins().stack_store(res_i64, slots[*dest], 0);
                     }
                 }
-                Opcode::Print(src) => {
+                Opcode::Print(src, is_float) => {
                     let val_i64 = builder.ins().stack_load(types::I64, slots[*src], 0);
-                    let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
-                    let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
-                    builder.ins().call(local_print, &[val]);
+                    if *is_float {
+                        let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
+                        let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
+                        builder.ins().call(local_print, &[val]);
+                    } else {
+                        let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
+                        builder.ins().call(local_print_i64, &[val_i64]);
+                    }
                 }
                 Opcode::JumpIfFalse(cond_reg, offset) => {
                     let cond_i64 = builder.ins().stack_load(types::I64, slots[*cond_reg], 0);

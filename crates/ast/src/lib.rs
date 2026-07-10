@@ -87,7 +87,7 @@ pub enum Stmt {
     },
     EnumDef {
         name: String,
-        variants: Vec<(String, Option<Type>)>,
+        variants: Vec<(String, Vec<Type>)>,
         span: Span,
     },
 }
@@ -99,7 +99,7 @@ pub enum Pattern {
     EnumVariant {
         enum_name: String,
         variant_name: String,
-        binding_name: Option<String>,
+        binding_names: Vec<String>,
         span: Span,
     },
     Number(f64, Span),
@@ -190,7 +190,7 @@ pub enum Expr {
     EnumInit {
         enum_name: String,
         variant_name: String,
-        value: Option<Box<Expr>>,
+        values: Vec<Expr>,
         span: Span,
     },
     Block(Vec<Stmt>, Span),
@@ -335,10 +335,10 @@ impl Expr {
                 arms: arms.iter().map(|(p, e)| (p.clone(), e.substitute(args))).collect(),
                 span: *span,
             },
-            Expr::EnumInit { enum_name, variant_name, value, span } => Expr::EnumInit {
+            Expr::EnumInit { enum_name, variant_name, values, span } => Expr::EnumInit {
                 enum_name: enum_name.clone(),
                 variant_name: variant_name.clone(),
-                value: value.as_ref().map(|v| Box::new(v.substitute(args))),
+                values: values.iter().map(|v| v.substitute(args)).collect(),
                 span: *span,
             },
             Expr::Block(stmts, span) => Expr::Block(stmts.iter().map(|s| s.substitute(args)).collect(), *span),

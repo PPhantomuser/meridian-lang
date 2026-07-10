@@ -14,7 +14,7 @@ pub enum Value {
     NativeObject(String, std::sync::Arc<std::sync::Mutex<dyn std::any::Any + Send + Sync>>),
     Struct(String, std::sync::Arc<std::sync::Mutex<HashMap<String, Value>>>),
     Array(std::sync::Arc<std::sync::Mutex<Vec<Value>>>),
-    Enum(String, String, Option<Box<Value>>),
+    Enum(String, String, Vec<Value>),
     Error(String),
 }
 
@@ -56,12 +56,19 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, "]")
             }
-            Value::Enum(e_name, v_name, val) => {
-                if let Some(inner) = val {
-                    write!(f, "{}::{}({})", e_name, v_name, inner)
-                } else {
-                    write!(f, "{}::{}", e_name, v_name)
+            Value::Enum(enum_name, variant_name, values) => {
+                write!(f, "{}::{}", enum_name, variant_name)?;
+                if !values.is_empty() {
+                    write!(f, "(")?;
+                    for (i, v) in values.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", v)?;
+                    }
+                    write!(f, ")")?;
                 }
+                Ok(())
             }
             Value::Error(msg) => write!(f, "<Error: {}>", msg),
         }
@@ -368,7 +375,7 @@ impl VM {
                         Opcode::Jump(offset) => {
                             frame.ip = offset;
                         }
-                        Opcode::Print(src) => {
+                        Opcode::Print(src, _) => {
                             println!("{}", &task.registers[base + src]);
                         }
                         Opcode::Call(dest, ref name, arg_start, arg_count) => {
@@ -578,9 +585,12 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::MakeEnum(dest, enum_name, variant_name, val_reg) => {
-                            let val = val_reg.map(|r| Box::new(task.registers[base + r].clone()));
-                            task.registers[base + dest] = Value::Enum(enum_name, variant_name, val);
+                        Opcode::MakeEnum(dest, enum_name, variant_name, start_reg, count) => {
+                            let mut values = Vec::new();
+                            for i in 0..count {
+                                values.push(task.registers[base + start_reg + i].clone());
+                            }
+                            task.registers[base + dest] = Value::Enum(enum_name, variant_name, values);
                         }
                         Opcode::CheckEnum(dest, obj_reg, variant_name) => {
                             let obj = task.registers[base + obj_reg].clone();
@@ -590,13 +600,21 @@ impl VM {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
-                        Opcode::ExtractEnum(dest, obj_reg) => {
+                        Opcode::ExtractEnum(dest_start, obj_reg, count) => {
                             let obj = task.registers[base + obj_reg].clone();
-                            if let Value::Enum(_, _, Some(val)) = obj {
-                                task.registers[base + dest] = *val;
+                            if let Value::Enum(_, _, values) = obj {
+                                if values.len() != count {
+                                    return Err(RuntimeError {
+                                        message: format!("ExtractEnum expected {} values, found {}", count, values.len()),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                                for (i, v) in values.into_iter().enumerate() {
+                                    task.registers[base + dest_start + i] = v;
+                                }
                             } else {
                                 return Err(RuntimeError {
-                                    message: "ExtractEnum on invalid enum or variant without value".to_string(),
+                                    message: "ExtractEnum on invalid enum".to_string(),
                                     stack_trace: self.generate_stack_trace(&task, &frame),
                                 });
                             }

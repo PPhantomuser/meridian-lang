@@ -46,7 +46,7 @@ struct StructSignature {
 #[derive(Clone)]
 #[allow(dead_code)]
 struct EnumSignature {
-    variants: HashMap<String, Option<Type>>,
+    variants: HashMap<String, Vec<Type>>,
     span: Span,
 }
 
@@ -132,6 +132,30 @@ impl SemanticAnalyzer {
             return true;
         }
         false
+    }
+
+    fn resolve_type(&self, ty: &mut Type) {
+        match ty {
+            Type::Struct(name) => {
+                if self.enums.contains_key(name) {
+                    *ty = Type::Enum(name.clone());
+                }
+            }
+            Type::Reference(inner, _) => self.resolve_type(inner),
+            Type::Future(inner) => self.resolve_type(inner),
+            Type::Generic(_, type_args) => {
+                for arg in type_args {
+                    self.resolve_type(arg);
+                }
+            }
+            Type::Option(inner) => self.resolve_type(inner),
+            Type::Result(ok, err) => {
+                self.resolve_type(ok);
+                self.resolve_type(err);
+            }
+            Type::Array(inner) => self.resolve_type(inner),
+            _ => {}
+        }
     }
 
     fn enter_scope(&mut self) {
@@ -273,6 +297,34 @@ impl SemanticAnalyzer {
             }
         }
 
+        // Pass 1.5: Resolve types (upgrade Struct to Enum if it's actually an Enum)
+        let mut resolved_functions = self.functions.clone();
+        for (_, sig) in resolved_functions.iter_mut() {
+            for p in &mut sig.parameters {
+                self.resolve_type(p);
+            }
+            self.resolve_type(&mut sig.return_type);
+        }
+        self.functions = resolved_functions;
+
+        let mut resolved_structs = self.structs.clone();
+        for (_, sig) in resolved_structs.iter_mut() {
+            for (_, ty) in sig.fields.iter_mut() {
+                self.resolve_type(ty);
+            }
+        }
+        self.structs = resolved_structs;
+
+        let mut resolved_enums = self.enums.clone();
+        for (_, sig) in resolved_enums.iter_mut() {
+            for (_, ty) in sig.variants.iter_mut() {
+                for t in ty.iter_mut() {
+                    self.resolve_type(t);
+                }
+            }
+        }
+        self.enums = resolved_enums;
+
         // Pass 2: Analyze everything
         for stmt in &program.statements {
             self.analyze_statement(stmt);
@@ -283,8 +335,11 @@ impl SemanticAnalyzer {
         match stmt {
             Stmt::Let { name, mutable, type_annotation, initializer, span } => {
                 let init_type = self.analyze_expression(initializer);
-                
-                let final_type = if let Some(annotated_type) = type_annotation {
+                let mut resolved_type = type_annotation.clone();
+                if let Some(t) = &mut resolved_type {
+                    self.resolve_type(t);
+                }
+                let final_type = if let Some(annotated_type) = &resolved_type {
                     if !self.types_compatible(annotated_type, &init_type) {
                         self.diagnostics.push(Diagnostic::new(
                             format!("Type mismatch: expected {:?}, found {:?}", annotated_type, init_type),
@@ -308,14 +363,21 @@ impl SemanticAnalyzer {
                 self.analyze_expression(expr);
             }
             Stmt::Function { name, parameters, return_type, is_async, body, span, doc_comment: _, attributes: _ } => {
+                let mut resolved_parameters = parameters.clone();
+                for param in &mut resolved_parameters {
+                    self.resolve_type(&mut param.ty);
+                }
+                let mut resolved_return_type = return_type.clone();
+                self.resolve_type(&mut resolved_return_type);
+
                 let mut ref_param_count = 0;
-                for param in parameters {
+                for param in &resolved_parameters {
                     if let Type::Reference(_, _) = param.ty {
                         ref_param_count += 1;
                     }
                 }
 
-                let returns_ref = matches!(return_type, Type::Reference(_, _));
+                let returns_ref = matches!(resolved_return_type, Type::Reference(_, _));
                 if returns_ref && ref_param_count != 1 {
                     self.diagnostics.push(Diagnostic::new(
                         format!("Function '{}' returns a reference but takes {} reference parameters. Lifetime elision fails.", name, ref_param_count),
@@ -327,24 +389,24 @@ impl SemanticAnalyzer {
                 }
 
                 let sig = FunctionSignature {
-                    parameters: parameters.iter().map(|p| p.ty.clone()).collect(),
-                    return_type: return_type.clone(),
+                    parameters: resolved_parameters.iter().map(|p| p.ty.clone()).collect(),
+                    return_type: resolved_return_type.clone(),
                     span: *span,
                     is_extern: false,
                 };
                 self.functions.insert(name.clone(), sig);
 
                 self.enter_scope();
-                for param in parameters {
+                for param in &resolved_parameters {
                     self.declare_variable(param.name.clone(), param.ty.clone(), false, param.span);
                 }
 
-                self.current_function_return_type = Some(return_type.clone());
+                self.current_function_return_type = Some(resolved_return_type.clone());
                 
                 let actual_return_type = self.analyze_expression(body);
                 
                 let expected_ty = if *is_async {
-                    if let Type::Future(inner) = return_type {
+                    if let Type::Future(inner) = &resolved_return_type {
                         *inner.clone()
                     } else {
                         self.diagnostics.push(Diagnostic::new(
@@ -357,7 +419,7 @@ impl SemanticAnalyzer {
                         Type::Error
                     }
                 } else {
-                    return_type.clone()
+                    resolved_return_type.clone()
                 };
 
                 if !self.types_compatible(&expected_ty, &actual_return_type) {
@@ -1088,59 +1150,48 @@ impl SemanticAnalyzer {
                 }
                 return_type
             }
-            Expr::EnumInit { enum_name, variant_name, value, span } => {
+            Expr::EnumInit { enum_name, variant_name, values, span } => {
                 if let Some(enum_sig) = self.enums.get(enum_name).cloned() {
-                    if let Some(variant_ty) = enum_sig.variants.get(variant_name) {
-                        if let Some(expected_ty) = variant_ty {
-                            if let Some(val) = value {
-                                let val_ty = self.analyze_expression(val);
-                                if val_ty != *expected_ty && val_ty != Type::Error && val_ty != Type::Unknown {
-                                    self.diagnostics.push(Diagnostic::new(
-                                        format!("Enum variant {}::{} expects type {:?}, but got {:?}", enum_name, variant_name, expected_ty, val_ty),
-                                        "MER0160".to_string(),
-                                        *span,
-                                        DiagnosticCategory::Type,
-                                        None,
-                                    ));
-                                }
-                            } else {
+                    if let Some(expected_types) = enum_sig.variants.get(variant_name) {
+                        if values.len() != expected_types.len() {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Enum variant '{}::{}' expects {} arguments, but found {}", enum_name, variant_name, expected_types.len(), values.len()),
+                                "MER0160".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                None,
+                            ));
+                        }
+                        for (i, v) in values.iter().enumerate() {
+                            let actual_type = self.analyze_expression(v);
+                            if i < expected_types.len() && !self.types_compatible(&expected_types[i], &actual_type) {
                                 self.diagnostics.push(Diagnostic::new(
-                                    format!("Enum variant {}::{} expects a value of type {:?}", enum_name, variant_name, expected_ty),
+                                    format!("Type mismatch in enum variant: expected {:?}, found {:?}", expected_types[i], actual_type),
                                     "MER0161".to_string(),
-                                    *span,
-                                    DiagnosticCategory::Type,
-                                    None,
-                                ));
-                            }
-                        } else {
-                            if value.is_some() {
-                                self.diagnostics.push(Diagnostic::new(
-                                    format!("Enum variant {}::{} does not take a value", enum_name, variant_name),
-                                    "MER0162".to_string(),
-                                    *span,
-                                    DiagnosticCategory::Type,
+                                    v.span(),
+                                    DiagnosticCategory::Semantic,
                                     None,
                                 ));
                             }
                         }
-                        return Type::Enum(enum_name.clone());
+                    } else {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Variant '{}' not found in enum '{}'", variant_name, enum_name),
+                            "MER0163".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            None,
+                        ));
                     }
-                    self.diagnostics.push(Diagnostic::new(
-                        format!("Variant '{}' not found in enum '{}'", variant_name, enum_name),
-                        "MER0163".to_string(),
-                        *span,
-                        DiagnosticCategory::Semantic,
-                        None,
-                    ));
                     return Type::Enum(enum_name.clone());
                 } else if enum_name == "Option" {
                     if variant_name == "Some" {
-                        if let Some(val) = value {
-                            let val_ty = self.analyze_expression(val);
+                        if values.len() == 1 {
+                            let val_ty = self.analyze_expression(&values[0]);
                             return Type::Option(Box::new(val_ty));
                         } else {
                             self.diagnostics.push(Diagnostic::new(
-                                "Option::Some expects a value".to_string(),
+                                "Option::Some expects exactly 1 value".to_string(),
                                 "MER0164".to_string(),
                                 *span,
                                 DiagnosticCategory::Type,
@@ -1149,7 +1200,7 @@ impl SemanticAnalyzer {
                             return Type::Unknown;
                         }
                     } else if variant_name == "None" {
-                        if value.is_some() {
+                        if !values.is_empty() {
                             self.diagnostics.push(Diagnostic::new(
                                 "Option::None does not take a value".to_string(),
                                 "MER0165".to_string(),
@@ -1162,12 +1213,12 @@ impl SemanticAnalyzer {
                     }
                 } else if enum_name == "Result" {
                     if variant_name == "Ok" {
-                        if let Some(val) = value {
-                            let val_ty = self.analyze_expression(val);
+                        if values.len() == 1 {
+                            let val_ty = self.analyze_expression(&values[0]);
                             return Type::Result(Box::new(val_ty), Box::new(Type::Unknown));
                         } else {
                             self.diagnostics.push(Diagnostic::new(
-                                "Result::Ok expects a value".to_string(),
+                                "Result::Ok expects exactly 1 value".to_string(),
                                 "MER0164".to_string(),
                                 *span,
                                 DiagnosticCategory::Type,
@@ -1176,12 +1227,12 @@ impl SemanticAnalyzer {
                             return Type::Unknown;
                         }
                     } else if variant_name == "Err" {
-                        if let Some(val) = value {
-                            let val_ty = self.analyze_expression(val);
+                        if values.len() == 1 {
+                            let val_ty = self.analyze_expression(&values[0]);
                             return Type::Result(Box::new(Type::Unknown), Box::new(val_ty));
                         } else {
                             self.diagnostics.push(Diagnostic::new(
-                                "Result::Err expects a value".to_string(),
+                                "Result::Err expects exactly 1 value".to_string(),
                                 "MER0164".to_string(),
                                 *span,
                                 DiagnosticCategory::Type,
@@ -1260,9 +1311,9 @@ impl SemanticAnalyzer {
                     ));
                 }
             },
-            Pattern::EnumVariant { enum_name, variant_name, binding_name, span } => {
+            Pattern::EnumVariant { enum_name, variant_name, binding_names, span } => {
                 // Check if the enum type matches the matched value's type
-                let mut payload_ty = Type::Unknown;
+                let mut payload_tys: Vec<Type> = Vec::new();
                 
                 match ty {
                     Type::Enum(expected_enum) => {
@@ -1275,8 +1326,8 @@ impl SemanticAnalyzer {
                                 None,
                             ));
                         } else if let Some(sig) = self.enums.get(enum_name) {
-                            if let Some(Some(v_ty)) = sig.variants.get(variant_name) {
-                                payload_ty = v_ty.clone();
+                            if let Some(v_tys) = sig.variants.get(variant_name) {
+                                payload_tys = v_tys.clone();
                             }
                         }
                     }
@@ -1290,7 +1341,9 @@ impl SemanticAnalyzer {
                                 None,
                             ));
                         } else if variant_name == "Some" {
-                            payload_ty = *inner.clone();
+                            payload_tys = vec![*inner.clone()];
+                        } else if variant_name == "None" {
+                            payload_tys = vec![];
                         }
                     }
                     Type::Result(ok_ty, err_ty) => {
@@ -1303,9 +1356,9 @@ impl SemanticAnalyzer {
                                 None,
                             ));
                         } else if variant_name == "Ok" {
-                            payload_ty = *ok_ty.clone();
+                            payload_tys = vec![*ok_ty.clone()];
                         } else if variant_name == "Err" {
-                            payload_ty = *err_ty.clone();
+                            payload_tys = vec![*err_ty.clone()];
                         }
                     }
                     Type::Unknown | Type::Error => {}
@@ -1320,10 +1373,21 @@ impl SemanticAnalyzer {
                     }
                 }
                 
-                // If there is a binding, assign it the type of the inner payload if any
-                if let Some(b_name) = binding_name {
+                if binding_names.len() > 0 && payload_tys.len() != binding_names.len() && !matches!(ty, Type::Unknown | Type::Error) {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Pattern expected {} bindings, found {}", payload_tys.len(), binding_names.len()),
+                        "MER0162".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                }
+                
+                // If there are bindings, assign them the type of the inner payloads if any
+                for (i, b_name) in binding_names.iter().enumerate() {
+                    let b_ty = if i < payload_tys.len() { payload_tys[i].clone() } else { Type::Unknown };
                     self.scopes.last_mut().unwrap().insert(b_name.clone(), SymbolInfo {
-                        ty: payload_ty,
+                        ty: b_ty,
                         mutable: false,
                         span: *span,
                         borrows: vec![],

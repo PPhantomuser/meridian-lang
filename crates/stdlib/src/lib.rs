@@ -10,8 +10,8 @@ pub fn register_all(vm: &mut VM) {
             }
             if let Value::String(path) = &args[0] {
                 match fs::read_to_string(path) {
-                    Ok(content) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(content)))),
-                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
+                    Ok(content) => Value::Enum("Result".into(), "Ok".into(), vec![Value::String(content)]),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())]),
                 }
             } else {
                 return Value::Error("read_file expects a String argument".to_string());
@@ -80,9 +80,9 @@ pub fn register_all(vm: &mut VM) {
                     let guard = obj.lock().unwrap();
                     if let Some(map) = guard.downcast_ref::<std::collections::HashMap<String, Value>>() {
                         if let Some(val) = map.get(key) {
-                            return Value::Enum("Option".into(), "Some".into(), Some(Box::new(val.clone())));
+                            return Value::Enum("Option".into(), "Some".into(), vec![val.clone()]);
                         } else {
-                            return Value::Enum("Option".into(), "None".into(), None);
+                            return Value::Enum("Option".into(), "vec![]".into(), vec![]);
                         }
                     }
                 }
@@ -179,9 +179,9 @@ pub fn register_all(vm: &mut VM) {
                 let mut guard = obj.lock().unwrap();
                 if let Some(deque) = guard.downcast_mut::<std::collections::VecDeque<Value>>() {
                     if let Some(val) = deque.pop_front() {
-                        return Value::Enum("Option".into(), "Some".into(), Some(Box::new(val)));
+                        return Value::Enum("Option".into(), "Some".into(), vec![val]);
                     } else {
-                        return Value::Enum("Option".into(), "None".into(), None);
+                        return Value::Enum("Option".into(), "vec![]".into(), vec![]);
                     }
                 }
             }
@@ -235,10 +235,10 @@ pub fn register_all(vm: &mut VM) {
             if let Value::String(addr) = &args[0] {
                 match std::net::TcpListener::bind(addr) {
                     Ok(listener) => {
-                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("TcpListener".to_string(), std::sync::Arc::new(std::sync::Mutex::new(listener))))))
+                        Value::Enum("Result".into(), "Ok".into(), vec![Value::NativeObject("TcpListener".to_string(), std::sync::Arc::new(std::sync::Mutex::new(listener)))])
                     }
                     Err(e) => {
-                        Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                        Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                     }
                 }
             } else {
@@ -258,10 +258,10 @@ pub fn register_all(vm: &mut VM) {
                 if let Some(listener) = guard.downcast_mut::<std::net::TcpListener>() {
                     match listener.accept() {
                         Ok((stream, _addr)) => {
-                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("TcpStream".to_string(), std::sync::Arc::new(std::sync::Mutex::new(stream))))))
+                            Value::Enum("Result".into(), "Ok".into(), vec![Value::NativeObject("TcpStream".to_string(), std::sync::Arc::new(std::sync::Mutex::new(stream)))])
                         }
                         Err(e) => {
-                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                            Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                         }
                     }
                 } else {
@@ -287,10 +287,10 @@ pub fn register_all(vm: &mut VM) {
                     match stream.read(&mut buffer) {
                         Ok(size) => {
                             let s = String::from_utf8_lossy(&buffer[..size]).into_owned();
-                            Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(s))))
+                            Value::Enum("Result".into(), "Ok".into(), vec![Value::String(s)])
                         }
                         Err(e) => {
-                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                            Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                         }
                     }
                 } else {
@@ -314,9 +314,9 @@ pub fn register_all(vm: &mut VM) {
                     let mut guard = obj.lock().unwrap();
                     if let Some(stream) = guard.downcast_mut::<std::net::TcpStream>() {
                         match stream.write_all(data.as_bytes()) {
-                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
+                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), vec![Value::Bool(true)]),
                             Err(e) => {
-                                Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                                Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                             }
                         }
                     } else {
@@ -340,8 +340,8 @@ pub fn register_all(vm: &mut VM) {
             }
             if let (Value::String(path), Value::String(content)) = (&args[0], &args[1]) {
                 match std::fs::write(path, content) {
-                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
-                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
+                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), vec![Value::Bool(true)]),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())]),
                 }
             } else {
                 return Value::Error("file_write arguments must be String".to_string());
@@ -360,11 +360,11 @@ pub fn register_all(vm: &mut VM) {
                 match std::fs::OpenOptions::new().create(true).append(true).open(path) {
                     Ok(mut file) => {
                         match file.write_all(content.as_bytes()) {
-                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
-                            Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
+                            Ok(_) => Value::Enum("Result".into(), "Ok".into(), vec![Value::Bool(true)]),
+                            Err(e) => Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())]),
                         }
                     }
-                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())]),
                 }
             } else {
                 return Value::Error("file_append arguments must be String".to_string());
@@ -380,8 +380,8 @@ pub fn register_all(vm: &mut VM) {
             }
             if let Value::String(path) = &args[0] {
                 match std::fs::remove_file(path) {
-                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Bool(true)))),
-                    Err(e) => Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string())))),
+                    Ok(_) => Value::Enum("Result".into(), "Ok".into(), vec![Value::Bool(true)]),
+                    Err(e) => Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())]),
                 }
             } else {
                 return Value::Error("file_delete argument must be String".to_string());
@@ -429,10 +429,10 @@ pub fn register_all(vm: &mut VM) {
                 match command.output() {
                     Ok(output) => {
                         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                        Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(stdout))))
+                        Value::Enum("Result".into(), "Ok".into(), vec![Value::String(stdout)])
                     }
                     Err(e) => {
-                        Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                        Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                     }
                 }
             } else {
@@ -450,9 +450,9 @@ pub fn register_all(vm: &mut VM) {
             if let Value::String(path) = &args[0] {
                 unsafe {
                     match libloading::Library::new(path) {
-                        Ok(lib) => Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::NativeObject("Library".to_string(), std::sync::Arc::new(std::sync::Mutex::new(lib)))))),
+                        Ok(lib) => Value::Enum("Result".into(), "Ok".into(), vec![Value::NativeObject("Library".to_string(), std::sync::Arc::new(std::sync::Mutex::new(lib)))]),
                         Err(e) => {
-                            Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String(e.to_string()))))
+                            Value::Enum("Result".into(), "Err".into(), vec![Value::String(e.to_string())])
                         }
                     }
                 }
@@ -481,10 +481,10 @@ pub fn register_all(vm: &mut VM) {
                                         ptr,
                                         signature: sig.clone(),
                                     };
-                                    return Value::Enum("Option".into(), "Some".into(), Some(Box::new(Value::NativeObject("Function".to_string(), std::sync::Arc::new(std::sync::Mutex::new(func))))));
+                                    return Value::Enum("Option".into(), "Some".into(), vec![Value::NativeObject("Function".to_string(), std::sync::Arc::new(std::sync::Mutex::new(func)))]);
                                 }
                                 Err(_e) => {
-                                    return Value::Enum("Option".into(), "None".into(), None);
+                                    return Value::Enum("Option".into(), "vec![]".into(), vec![]);
                                 }
                             }
                         }
@@ -519,7 +519,7 @@ pub fn register_all(vm: &mut VM) {
                                     if let (Value::Number(a), Value::Number(b)) = (&deque[0], &deque[1]) {
                                         let c_fn: unsafe extern "C" fn(f64, f64) -> f64 = unsafe { std::mem::transmute(func.ptr) };
                                         let res = unsafe { c_fn(*a, *b) };
-                                        return Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::Number(res))));
+                                        return Value::Enum("Result".into(), "Ok".into(), vec![Value::Number(res)]);
                                     } else {
                                         return Value::Error("dlcall arguments do not match signature".to_string());
                                     }
@@ -531,10 +531,10 @@ pub fn register_all(vm: &mut VM) {
                                         let c_fn: unsafe extern "C" fn(*const std::ffi::c_char) -> *const std::ffi::c_char = unsafe { std::mem::transmute(func.ptr) };
                                         let res_ptr = unsafe { c_fn(c_str.as_ptr()) };
                                         if res_ptr.is_null() {
-                                            return Value::Enum("Result".into(), "Err".into(), Some(Box::new(Value::String("Null pointer".to_string()))));
+                                            return Value::Enum("Result".into(), "Err".into(), vec![Value::String("Null pointer".to_string())]);
                                         }
                                         let res_c_str = unsafe { std::ffi::CStr::from_ptr(res_ptr) };
-                                        return Value::Enum("Result".into(), "Ok".into(), Some(Box::new(Value::String(res_c_str.to_string_lossy().into_owned()))));
+                                        return Value::Enum("Result".into(), "Ok".into(), vec![Value::String(res_c_str.to_string_lossy().into_owned())]);
                                     } else {
                                         return Value::Error("dlcall arguments do not match signature".to_string());
                                     }

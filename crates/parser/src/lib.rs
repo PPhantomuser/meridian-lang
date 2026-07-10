@@ -274,10 +274,27 @@ impl<'a> Parser<'a> {
             };
             self.advance(); // consume variant name
 
-            let mut variant_type = None;
+            let mut variant_types = Vec::new();
             if self.current_token.kind == TokenKind::LParen {
                 self.advance(); // consume (
-                variant_type = Some(self.parse_type_annotation()?);
+                
+                while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                    variant_types.push(self.parse_type_annotation()?);
+                    
+                    if self.current_token.kind == TokenKind::Comma {
+                        self.advance(); // consume ,
+                    } else if self.current_token.kind != TokenKind::RParen {
+                        self.diagnostics.push(Diagnostic::new(
+                            "Expected ',' or ')' after enum variant type".to_string(),
+                            "MER0093".to_string(),
+                            self.current_token.span,
+                            DiagnosticCategory::Syntax,
+                            None,
+                        ));
+                        return None;
+                    }
+                }
+                
                 if self.current_token.kind != TokenKind::RParen {
                     self.diagnostics.push(Diagnostic::new(
                         "Expected ')' after enum variant type".to_string(),
@@ -291,7 +308,7 @@ impl<'a> Parser<'a> {
                 self.advance(); // consume )
             }
 
-            variants.push((variant_name, variant_type));
+            variants.push((variant_name, variant_types));
 
             if self.current_token.kind == TokenKind::Comma {
                 self.advance();
@@ -1342,10 +1359,27 @@ impl<'a> Parser<'a> {
                     };
                     self.advance(); // consume variant name
                     
-                    let mut value = None;
+                    let mut values = Vec::new();
                     if self.current_token.kind == TokenKind::LParen {
                         self.advance(); // consume (
-                        value = Some(Box::new(self.parse_expression(0)?));
+                        
+                        while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                            values.push(self.parse_expression(0)?);
+                            
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.advance(); // consume ,
+                            } else if self.current_token.kind != TokenKind::RParen {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected ',' or ')' after enum variant value".to_string(),
+                                    "MER0096".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        }
+                        
                         if self.current_token.kind != TokenKind::RParen {
                             self.diagnostics.push(Diagnostic::new(
                                 "Expected ')' after enum variant value".to_string(),
@@ -1358,12 +1392,12 @@ impl<'a> Parser<'a> {
                         }
                         self.advance(); // consume )
                     }
-                    let end_span = self.current_token.span; // well, previous token's span is better, but close enough
+                    let end_span = self.current_token.span;
                     
                     Expr::EnumInit {
                         enum_name: name,
                         variant_name,
-                        value,
+                        values,
                         span: Span::new(start_span.start, end_span.end),
                     }
                 } else if allow_struct && self.current_token.kind == TokenKind::LBrace {
@@ -1748,21 +1782,37 @@ impl<'a> Parser<'a> {
                     };
                     self.advance(); // consume variant_name
 
-                    let mut binding_name = None;
+                    let mut binding_names = Vec::new();
                     if self.current_token.kind == TokenKind::LParen {
                         self.advance(); // consume (
-                        if let TokenKind::Identifier(b_name) = &self.current_token.kind {
-                            binding_name = Some(b_name.clone());
-                            self.advance(); // consume binding name
-                        } else {
-                            self.diagnostics.push(Diagnostic::new(
-                                "Expected identifier in enum variant pattern".to_string(),
-                                "MER0098".to_string(),
-                                self.current_token.span,
-                                DiagnosticCategory::Syntax,
-                                None,
-                            ));
-                            return None;
+                        
+                        while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                            if let TokenKind::Identifier(b_name) = &self.current_token.kind {
+                                binding_names.push(b_name.clone());
+                                self.advance(); // consume binding name
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected identifier in enum variant pattern".to_string(),
+                                    "MER0098".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                            
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.advance(); // consume ,
+                            } else if self.current_token.kind != TokenKind::RParen {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected ',' or ')' after enum variant pattern binding".to_string(),
+                                    "MER0099".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
                         }
 
                         if self.current_token.kind != TokenKind::RParen {
@@ -1777,12 +1827,13 @@ impl<'a> Parser<'a> {
                         }
                         self.advance(); // consume )
                     }
+                    let end_span = self.current_token.span;
                     
                     Some(meridian_ast::Pattern::EnumVariant {
                         enum_name: id_name,
                         variant_name,
-                        binding_name,
-                        span: Span::new(start_span.start, self.current_token.span.end), // approx
+                        binding_names,
+                        span: Span::new(start_span.start, end_span.end),
                     })
                 } else if id_name == "_" {
                     Some(meridian_ast::Pattern::CatchAll(start_span))
