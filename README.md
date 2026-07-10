@@ -27,7 +27,7 @@ Meridian syntax is designed to be clean, readable, and highly expressive.
 
 ```meridian
 // A simple async fetch example
-async fn fetch_data(id: Number) -> Future<Number> {
+async fn fetch_data(id: Int) -> Future<Int> {
     print "Fetching user data...";
     return id * 10;
 }
@@ -79,7 +79,7 @@ print "Hello from Meridian!";
 
 Run it using the Meridian CLI:
 ```bash
-cargo run -p meridian_cli -- run hello.mer
+cargo run --bin merid -- run hello.mer
 ```
 
 ---

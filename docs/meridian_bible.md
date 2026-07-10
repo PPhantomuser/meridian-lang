@@ -25,26 +25,26 @@ Meridian ships as a unified, zero-configuration binary called `merid`. You don't
 ### Running Code
 To run a script (`.mer` file) through the Virtual Machine:
 ```bash
-cargo run -p meridian_cli -- run path/to/script.mer
+cargo run --bin merid -- run path/to/script.mer
 ```
 
 To compile and run natively using Cranelift (for maximum speed):
 ```bash
-cargo run -p meridian_cli -- run --release path/to/script.mer
+cargo run --bin merid -- run --release path/to/script.mer
 ```
 
 ### Static Analysis & Type Checking
 If you want to verify your code without running it (highly recommended for AI agents before proposing code):
 ```bash
-cargo run -p meridian_cli -- check path/to/script.mer
+cargo run --bin merid -- check path/to/script.mer
 ```
 *(If errors exist, the CLI will output a structured JSON array of diagnostics, pinpointing the exact byte offsets and issues.)*
 
 ### Formatting & Linting
 Meridian uses a built-in formatter and linter. All code must adhere to standard formatting to reduce cognitive load:
 ```bash
-cargo run -p meridian_cli -- fmt path/to/script.mer
-cargo run -p meridian_cli -- lint path/to/script.mer
+cargo run --bin merid -- fmt path/to/script.mer
+cargo run --bin merid -- lint path/to/script.mer
 ```
 
 ---
@@ -247,7 +247,7 @@ You are now equipped to write, analyze, and build robust software in Meridian. F
 
 ## Appendix: 10 Practical Examples in Meridian
 
-This appendix provides 10 real-world examples of Meridian code, ranging from basic syntax to advanced memory safety and networking. You can copy these into a `.mer` file and run them using `cargo run -p meridian_cli -- run <file.mer>`.
+This appendix provides 10 real-world examples of Meridian code, ranging from basic syntax to advanced memory safety and networking. You can copy these into a `.mer` file and run them using `cargo run --bin merid -- run <file.mer>`.
 
 ### Example 1: Hello World
 **Problem Statement:** You want to print a simple message to the console.

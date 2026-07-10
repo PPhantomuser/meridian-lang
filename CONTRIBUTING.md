@@ -30,7 +30,7 @@ To maintain code quality and ensure a smooth review process, please adhere to th
 ### 1. Formatting
 Meridian enforces a strict, zero-configuration formatting policy. Before submitting a PR that modifies `.mer` code in the examples or standard library, you **must** format it using the official formatter:
 ```bash
-cargo run -p meridian_cli -- fmt path/to/file.mer
+cargo run --bin merid -- fmt path/to/file.mer
 ```
 *Note: Any PR containing unformatted Meridian code will fail CI.*
 

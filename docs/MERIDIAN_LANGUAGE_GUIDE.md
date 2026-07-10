@@ -21,26 +21,26 @@ Meridian ships as a unified binary (`merid`).
 ### Running Code
 To run a `.mer` file through the Virtual Machine:
 ```bash
-cargo run -p meridian_cli -- run path/to/script.mer
+cargo run --bin merid -- run path/to/script.mer
 ```
 
 To natively JIT-compile and run a `.mer` file using the Cranelift backend:
 ```bash
-cargo run -p meridian_cli -- run --release path/to/script.mer
+cargo run --bin merid -- run --release path/to/script.mer
 ```
 
 ### Static Analysis
 To type-check a file without executing it (AI agents should use this to validate generated code!):
 ```bash
-cargo run -p meridian_cli -- check path/to/script.mer
+cargo run --bin merid -- check path/to/script.mer
 ```
 *(If errors exist, the CLI will output a structured JSON array of `Diagnostic` objects.)*
 
 ### Formatting & Linting
 Meridian uses zero-configuration tools. All code must be formatted:
 ```bash
-cargo run -p meridian_cli -- fmt path/to/script.mer
-cargo run -p meridian_cli -- lint path/to/script.mer
+cargo run --bin merid -- fmt path/to/script.mer
+cargo run --bin merid -- lint path/to/script.mer
 ```
 
 ---
