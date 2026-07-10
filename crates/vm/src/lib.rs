@@ -18,6 +18,56 @@ pub enum Value {
     Error(String),
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Int(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "{}", s),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Null => write!(f, "null"),
+            Value::NativeFunction(_) => write!(f, "<native fn>"),
+            Value::Reference(ptr) => write!(f, "<reference to {}>", ptr),
+            Value::Future(id) => write!(f, "<Future task_id={}>", id),
+            Value::NativeObject(_) => write!(f, "<NativeObject>"),
+            Value::Struct(name, fields_arc) => {
+                let fields = fields_arc.lock().unwrap();
+                write!(f, "{} {{ ", name)?;
+                let mut first = true;
+                for (k, v) in fields.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", k, v)?;
+                    first = false;
+                }
+                write!(f, " }}")
+            }
+            Value::Array(items_arc) => {
+                let items = items_arc.lock().unwrap();
+                write!(f, "[")?;
+                let mut first = true;
+                for item in items.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                    first = false;
+                }
+                write!(f, "]")
+            }
+            Value::Enum(e_name, v_name, val) => {
+                if let Some(inner) = val {
+                    write!(f, "{}::{}({})", e_name, v_name, inner)
+                } else {
+                    write!(f, "{}::{}", e_name, v_name)
+                }
+            }
+            Value::Error(msg) => write!(f, "<Error: {}>", msg),
+        }
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -205,6 +255,8 @@ impl VM {
                         Opcode::Add(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l + r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Int(l + r);
                             } else if let (Value::String(l), Value::String(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::String(format!("{}{}", l, r));
                             } else {
@@ -217,6 +269,8 @@ impl VM {
                         Opcode::Sub(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l - r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Int(l - r);
                             } else {
                                 return Err(RuntimeError {
                                     message: "Invalid types for subtraction".to_string(),
@@ -227,6 +281,8 @@ impl VM {
                         Opcode::Mul(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l * r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Int(l * r);
                             } else {
                                 return Err(RuntimeError {
                                     message: "Invalid types for multiplication".to_string(),
@@ -243,6 +299,14 @@ impl VM {
                                     });
                                 }
                                 task.registers[base + dest] = Value::Number(l / r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                if *r == 0 {
+                                    return Err(RuntimeError {
+                                        message: "Division by zero".to_string(),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                                task.registers[base + dest] = Value::Int(l / r);
                             } else {
                                 return Err(RuntimeError {
                                     message: "Invalid types for division".to_string(),
@@ -261,12 +325,16 @@ impl VM {
                         Opcode::Lt(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l < r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Bool(l < r);
                             } else {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
                         Opcode::Le(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Bool(l <= r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l <= r);
                             } else {
                                 task.registers[base + dest] = Value::Bool(false);
@@ -275,12 +343,16 @@ impl VM {
                         Opcode::Gt(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l > r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Bool(l > r);
                             } else {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
                         Opcode::Ge(dest, left, right) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
+                                task.registers[base + dest] = Value::Bool(l >= r);
+                            } else if let (Value::Int(l), Value::Int(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Bool(l >= r);
                             } else {
                                 task.registers[base + dest] = Value::Bool(false);
@@ -297,28 +369,7 @@ impl VM {
                             frame.ip = offset;
                         }
                         Opcode::Print(src) => {
-                            match &task.registers[base + src] {
-                                Value::Number(n) => println!("{}", n),
-                                Value::Int(n) => println!("{}", n),
-                                Value::String(s) => println!("{}", s),
-                                Value::Bool(b) => println!("{}", b),
-                                Value::Null => println!("null"),
-                                Value::NativeFunction(_) => println!("<native fn>"),
-                                Value::Reference(ptr) => println!("<reference to {}>", ptr),
-                                Value::Future(id) => println!("<Future task_id={}>", id),
-                                Value::NativeObject(_) => println!("<NativeObject>"),
-                                Value::Struct(name, _) => println!("<Struct {}>", name),
-                                Value::Array(_) => println!("<Array>"),
-                                Value::Enum(e_name, v_name, val) => {
-                                    if let Some(inner) = val {
-                                        // A simple placeholder print for enum values, e.g. Option::Some(<val>)
-                                        println!("{}::{}(...)", e_name, v_name);
-                                    } else {
-                                        println!("{}::{}", e_name, v_name);
-                                    }
-                                }
-                                Value::Error(e) => println!("<Error: {}>", e),
-                            }
+                            println!("{}", &task.registers[base + src]);
                         }
                         Opcode::Call(dest, ref name, arg_start, arg_count) => {
                             if let Some(Value::NativeFunction(func_id)) = self.global_env.get(name) {

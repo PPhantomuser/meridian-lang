@@ -118,6 +118,19 @@ impl SemanticAnalyzer {
         });
     }
 
+    fn types_compatible(&self, expected: &Type, actual: &Type) -> bool {
+        if expected == actual {
+            return true;
+        }
+        if *expected == Type::Unknown || *actual == Type::Unknown || *actual == Type::Error {
+            return true;
+        }
+        if *expected == Type::Number && *actual == Type::Int {
+            return true;
+        }
+        false
+    }
+
     fn enter_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
@@ -269,7 +282,7 @@ impl SemanticAnalyzer {
                 let init_type = self.analyze_expression(initializer);
                 
                 let final_type = if let Some(annotated_type) = type_annotation {
-                    if init_type != Type::Unknown && init_type != Type::Error && *annotated_type != init_type {
+                    if !self.types_compatible(annotated_type, &init_type) {
                         self.diagnostics.push(Diagnostic::new(
                             format!("Type mismatch: expected {:?}, found {:?}", annotated_type, init_type),
                             "MER0102".to_string(),
@@ -344,7 +357,7 @@ impl SemanticAnalyzer {
                     return_type.clone()
                 };
 
-                if actual_return_type != expected_ty && actual_return_type != Type::Error && actual_return_type != Type::Unknown {
+                if !self.types_compatible(&expected_ty, &actual_return_type) {
                     self.diagnostics.push(Diagnostic::new(
                         format!(
                             "Function `{}` expected to return type `{:?}`, but found `{:?}`",
@@ -361,7 +374,7 @@ impl SemanticAnalyzer {
             }
             Stmt::While { condition, body, .. } => {
                 let cond_ty = self.analyze_expression(condition);
-                if cond_ty != Type::Bool && cond_ty != Type::Error && cond_ty != Type::Unknown {
+                if !self.types_compatible(&Type::Bool, &cond_ty) {
                     self.diagnostics.push(Diagnostic::new(
                         format!("'while' condition must be a Bool, found {:?}", cond_ty),
                         "MER0113".to_string(),
@@ -377,7 +390,7 @@ impl SemanticAnalyzer {
             }
             Stmt::For { iterator, iterable, body, span } => {
                 let iter_ty = self.analyze_expression(iterable);
-                let yielded_ty = if iter_ty == Type::Number || iter_ty == Type::Unknown || iter_ty == Type::Error {
+                let yielded_ty = if self.types_compatible(&Type::Number, &iter_ty) {
                     Type::Number
                 } else {
                     self.diagnostics.push(Diagnostic::new(
@@ -465,7 +478,7 @@ impl SemanticAnalyzer {
                     return Type::Unknown;
                 }
 
-                if left_ty != right_ty {
+                if !self.types_compatible(&left_ty, &right_ty) {
                     self.diagnostics.push(Diagnostic::new(
                         format!("Type mismatch in binary operation: {:?} and {:?}", left_ty, right_ty),
                         "MER0102".to_string(),
@@ -480,6 +493,8 @@ impl SemanticAnalyzer {
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply | BinaryOperator::Divide => {
                         if left_ty == Type::Number {
                             Type::Number
+                        } else if left_ty == Type::Int {
+                            Type::Int
                         } else if left_ty == Type::String && *operator == BinaryOperator::Add {
                             Type::String
                         } else {
@@ -497,7 +512,7 @@ impl SemanticAnalyzer {
                         Type::Bool
                     }
                     BinaryOperator::LessThan | BinaryOperator::LessThanEqual | BinaryOperator::GreaterThan | BinaryOperator::GreaterThanEqual => {
-                        if left_ty == Type::Number {
+                        if left_ty == Type::Number || left_ty == Type::Int {
                             Type::Bool
                         } else {
                             self.diagnostics.push(Diagnostic::new(
@@ -514,7 +529,7 @@ impl SemanticAnalyzer {
             }
             Expr::If { condition, then_branch, else_branch, span } => {
                 let cond_ty = self.analyze_expression(condition);
-                if cond_ty != Type::Bool && cond_ty != Type::Error && cond_ty != Type::Unknown {
+                if !self.types_compatible(&Type::Bool, &cond_ty) {
                     self.diagnostics.push(Diagnostic::new(
                         format!("'if' condition must be a Bool, found {:?}", cond_ty),
                         "MER0105".to_string(),
@@ -527,7 +542,7 @@ impl SemanticAnalyzer {
                 let then_ty = self.analyze_expression(then_branch);
                 if let Some(else_expr) = else_branch {
                     let else_ty = self.analyze_expression(else_expr);
-                    if then_ty != Type::Error && else_ty != Type::Error && then_ty != else_ty {
+                    if then_ty != Type::Error && else_ty != Type::Error && !self.types_compatible(&then_ty, &else_ty) {
                         self.diagnostics.push(Diagnostic::new(
                             format!("'if' and 'else' branches have incompatible types: {:?} and {:?}", then_ty, else_ty),
                             "MER0106".to_string(),
@@ -540,7 +555,7 @@ impl SemanticAnalyzer {
                         then_ty
                     }
                 } else {
-                    if then_ty != Type::Unit && then_ty != Type::Error {
+                    if !self.types_compatible(&Type::Unit, &then_ty) {
                         self.diagnostics.push(Diagnostic::new(
                             format!("'if' expression missing an 'else' must return Unit, found {:?}", then_ty),
                             "MER0107".to_string(),
@@ -582,9 +597,9 @@ impl SemanticAnalyzer {
                                 "MER0101".to_string(),
                                 *span,
                                 DiagnosticCategory::Semantic,
-                                Some("Declare the variable with 'mut' to allow assignment.".to_string()),
+                                Some("Make the variable mutable with 'let mut'.".to_string()),
                             ));
-                        } else if info.ty != val_ty && val_ty != Type::Error && info.ty != Type::Unknown {
+                        } else if !self.types_compatible(&info.ty, &val_ty) {
                             self.diagnostics.push(Diagnostic::new(
                                 format!("Type mismatch: cannot assign type {:?} to variable of type {:?}", val_ty, info.ty),
                                 "MER0102".to_string(),
@@ -602,6 +617,17 @@ impl SemanticAnalyzer {
                             Some("Declare the variable before assigning to it.".to_string()),
                         ));
                     }
+                } else if let Expr::Index { .. } = &**target {
+                    let target_ty = self.analyze_expression(target);
+                    if !self.types_compatible(&target_ty, &val_ty) {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Type mismatch: cannot assign type {:?} to array element of type {:?}", val_ty, target_ty),
+                            "MER0102".to_string(),
+                            *span,
+                            DiagnosticCategory::Type,
+                            None,
+                        ));
+                    }
                 } else {
                     self.diagnostics.push(Diagnostic::new(
                         "Invalid left-hand side of assignment".to_string(),
@@ -612,7 +638,7 @@ impl SemanticAnalyzer {
                     ));
                 }
                 
-                val_ty
+                Type::Unit
             }
             Expr::Call { callee, arguments, span } => {
                 if let Expr::Identifier(name, callee_span) = &**callee {
@@ -654,7 +680,7 @@ impl SemanticAnalyzer {
                             for (i, arg) in arguments.iter().enumerate() {
                                 let arg_ty = self.analyze_expression(arg);
                                 let expected_ty = &signature.parameters[i];
-                                if arg_ty != *expected_ty && arg_ty != Type::Error && arg_ty != Type::Unknown && *expected_ty != Type::Unknown {
+                                if !self.types_compatible(expected_ty, &arg_ty) {
                                     self.diagnostics.push(Diagnostic::new(
                                         format!("Type mismatch in argument {}: expected {:?}, found {:?}", i + 1, expected_ty, arg_ty),
                                         "MER0102".to_string(),
@@ -851,12 +877,19 @@ impl SemanticAnalyzer {
                     Type::Error
                 }
             }
-            Expr::MethodCall { object, method_name: _, arguments, span: _ } => {
-                self.analyze_expression(object);
+            Expr::MethodCall { object, method_name, arguments, span } => {
+                let obj_ty = self.analyze_expression(object);
                 for arg in arguments {
                     self.analyze_expression(arg);
                 }
-                Type::Unknown
+                self.diagnostics.push(Diagnostic::new(
+                    format!("Method calls are not yet supported in Meridian (called '{}' on type {:?})", method_name, obj_ty),
+                    "MER0155".to_string(),
+                    *span,
+                    DiagnosticCategory::Semantic,
+                    Some("Methods using 'impl' blocks are planned for a future release.".to_string()),
+                ));
+                Type::Error
             }
             Expr::Error(_) => {
                 Type::Error
@@ -936,7 +969,7 @@ impl SemanticAnalyzer {
                     for (f_name, f_val) in fields {
                         let val_ty = self.analyze_expression(f_val);
                         if let Some(expected_ty) = sig.fields.get(f_name) {
-                            if expected_ty != &val_ty && val_ty != Type::Unknown && val_ty != Type::Error {
+                            if !self.types_compatible(expected_ty, &val_ty) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Type mismatch in field '{}': expected {:?}, found {:?}", f_name, expected_ty, val_ty),
                                     "MER0153".to_string(),

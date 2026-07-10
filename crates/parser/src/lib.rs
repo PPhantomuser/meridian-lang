@@ -1134,7 +1134,7 @@ impl<'a> Parser<'a> {
                     is_mut = true;
                     self.advance();
                 }
-                let expr = self.parse_expression(25)?;
+                let expr = self.parse_expression_impl(25, allow_struct)?;
                 let end_span = expr.span();
                 Expr::Borrow {
                     expr: Box::new(expr),
@@ -1145,7 +1145,7 @@ impl<'a> Parser<'a> {
             TokenKind::Star => {
                 let start_span = self.current_token.span;
                 self.advance();
-                let expr = self.parse_expression(25)?;
+                let expr = self.parse_expression_impl(25, allow_struct)?;
                 let end_span = expr.span();
                 Expr::Dereference {
                     expr: Box::new(expr),
@@ -1155,7 +1155,7 @@ impl<'a> Parser<'a> {
             TokenKind::Spawn => {
                 let start_span = self.current_token.span;
                 self.advance();
-                let expr = self.parse_expression(25)?;
+                let expr = self.parse_expression_impl(25, allow_struct)?;
                 let end_span = expr.span();
                 Expr::Spawn {
                     expr: Box::new(expr),
@@ -1633,7 +1633,7 @@ impl<'a> Parser<'a> {
             } else if self.current_token.kind == TokenKind::DotDot || self.current_token.kind == TokenKind::DotDotEqual {
                 let inclusive = self.current_token.kind == TokenKind::DotDotEqual;
                 self.advance();
-                let right = self.parse_expression(4)?; // Precedence of range operators
+                let right = self.parse_expression_impl(4, allow_struct)?; // Precedence of range operators
                 let span = Span::new(left.span().start, right.span().end);
                 left = Expr::Range {
                     start: Box::new(left),
@@ -1645,7 +1645,7 @@ impl<'a> Parser<'a> {
                 let operator = self.parse_infix_operator(&self.current_token.kind)?;
                 self.advance(); // consume operator
                 
-                let right = self.parse_expression(self.infix_precedence(&operator))?;
+                let right = self.parse_expression_impl(self.infix_precedence(&operator), allow_struct)?;
                 
                 let span = Span::new(left.span().start, right.span().end);
                 left = Expr::Binary {
