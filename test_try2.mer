@@ -1,0 +1,9 @@
+fn wrapper(file: String) -> Result<String, String> {
+    let content = unsafe { read_file(file) }?;
+    Result::Ok(content)
+}
+
+fn main() {
+    print(wrapper("test_try.mer"));
+    print(wrapper("does_not_exist.mer"));
+}

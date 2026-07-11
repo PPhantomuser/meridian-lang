@@ -1,0 +1,19 @@
+fn might_fail(b: Bool) -> Result<String, String> {
+    if b {
+        Result::Ok("Success!")
+    } else {
+        Result::Err("Failed!")
+    }
+}
+
+fn wrapper(b: Bool) -> Result<String, String> {
+    let msg = might_fail(b)?;
+    Result::Ok(msg)
+}
+
+fn main() {
+    let res = wrapper(true);
+    print(res);
+    let res2 = wrapper(false);
+    print(res2);
+}

@@ -51,6 +51,7 @@ pub enum TokenKind {
     Ampersand,
     Bang,
     Dollar,
+    Question,
     DocComment(String),
     LBrace,
     RBrace,
@@ -184,6 +185,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             '$' => Token { kind: TokenKind::Dollar, span: Span::new(start, start + 1) },
+            '?' => Token { kind: TokenKind::Question, span: Span::new(start, start + 1) },
             '"' => self.lex_string(start),
             _ if ch.is_ascii_digit() => self.lex_number(start, ch),
             _ if ch.is_alphabetic() || ch == '_' => self.lex_identifier(start, ch),

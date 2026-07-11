@@ -232,6 +232,7 @@ impl VM {
             let mut yielded = false;
 
             while let Some(mut frame) = task.frames.pop() {
+                let mut try_return_val = None;
                 while frame.ip < frame.chunk.instructions.len() {
                     
                     // Code coverage tracking
@@ -619,6 +620,29 @@ impl VM {
                                 });
                             }
                         }
+                        Opcode::TryUnwrap(dest, src) => {
+                            let result_val = task.registers[base + src].clone();
+                            if let Value::Enum(enum_name, variant_name, values) = result_val {
+                                if enum_name == "Result" {
+                                    if variant_name == "Ok" {
+                                        task.registers[base + dest] = values[0].clone();
+                                    } else if variant_name == "Err" {
+                                        try_return_val = Some(Value::Enum(enum_name, variant_name, values));
+                                        break;
+                                    }
+                                } else {
+                                    return Err(RuntimeError {
+                                        message: format!("TryUnwrap expected Result, found Enum {}", enum_name),
+                                        stack_trace: self.generate_stack_trace(&task, &frame),
+                                    });
+                                }
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "TryUnwrap expected Result".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
                     }
                 }
                 
@@ -630,7 +654,9 @@ impl VM {
                 // Wait, if we hit Return, we need to extract the return value.
                 // Let's get the last executed instruction.
                 let mut ret_val = Value::Null;
-                if frame.ip > 0 {
+                if let Some(val) = try_return_val {
+                    ret_val = val;
+                } else if frame.ip > 0 {
                     if let Opcode::Return(src) = frame.chunk.instructions[frame.ip - 1] {
                         ret_val = task.registers[frame.base_register + src].clone();
                     }

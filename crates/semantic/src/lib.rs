@@ -63,6 +63,7 @@ pub struct SemanticAnalyzer {
     in_unsafe_block: bool,
     pub index: SemanticIndex,
     pub type_map: HashMap<Span, Type>,
+    pub capabilities: std::collections::HashSet<String>,
 }
 
 impl SemanticAnalyzer {
@@ -80,6 +81,7 @@ impl SemanticAnalyzer {
             in_unsafe_block: false,
             index: SemanticIndex::default(),
             type_map: HashMap::new(),
+            capabilities: std::collections::HashSet::new(),
         };
         // Register standard library
         let native_funcs = vec![
@@ -107,6 +109,9 @@ impl SemanticAnalyzer {
             ("dlopen", vec![Type::String], Type::Result(Box::new(Type::Native("Library".to_string())), Box::new(Type::String))),
             ("dlsym", vec![Type::Native("Library".to_string()), Type::String, Type::String], Type::Option(Box::new(Type::Native("Function".to_string())))),
             ("dlcall", vec![Type::Native("Function".to_string()), Type::Unknown], Type::Result(Box::new(Type::Unknown), Box::new(Type::String))),
+            ("string_split", vec![Type::String, Type::String], Type::Array(Box::new(Type::String))),
+            ("string_contains", vec![Type::String, Type::String], Type::Bool),
+            ("string_substring", vec![Type::String, Type::Int, Type::Int], Type::String),
         ];
 
         for (name, params, ret) in native_funcs {
@@ -131,29 +136,52 @@ impl SemanticAnalyzer {
         if *expected == Type::Unknown || *actual == Type::Unknown || *actual == Type::Error {
             return true;
         }
-        false
+        match (expected, actual) {
+            (Type::Result(ok1, err1), Type::Result(ok2, err2)) => {
+                self.types_compatible(ok1, ok2) && self.types_compatible(err1, err2)
+            }
+            (Type::Option(inner1), Type::Option(inner2)) => {
+                self.types_compatible(inner1, inner2)
+            }
+            (Type::Array(inner1), Type::Array(inner2)) => {
+                self.types_compatible(inner1, inner2)
+            }
+            (Type::Reference(inner1, mut1), Type::Reference(inner2, mut2)) => {
+                mut1 == mut2 && self.types_compatible(inner1, inner2)
+            }
+            _ => false,
+        }
     }
 
-    fn resolve_type(&self, ty: &mut Type) {
+    fn resolve_type(&mut self, ty: &mut Type, span: Span) {
         match ty {
             Type::Struct(name) => {
                 if self.enums.contains_key(name) {
                     *ty = Type::Enum(name.clone());
+                } else if !self.structs.contains_key(name) && !matches!(name.as_str(), "HashMap" | "HashSet" | "VecDeque" | "TcpListener" | "TcpStream" | "Library" | "Function") {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Unknown type '{}'", name),
+                        "MER0100".to_string(),
+                        span,
+                        DiagnosticCategory::Semantic,
+                        None,
+                    ));
+                    *ty = Type::Error;
                 }
             }
-            Type::Reference(inner, _) => self.resolve_type(inner),
-            Type::Future(inner) => self.resolve_type(inner),
+            Type::Reference(inner, _) => self.resolve_type(inner, span),
+            Type::Future(inner) => self.resolve_type(inner, span),
             Type::Generic(_, type_args) => {
                 for arg in type_args {
-                    self.resolve_type(arg);
+                    self.resolve_type(arg, span);
                 }
             }
-            Type::Option(inner) => self.resolve_type(inner),
+            Type::Option(inner) => self.resolve_type(inner, span),
             Type::Result(ok, err) => {
-                self.resolve_type(ok);
-                self.resolve_type(err);
+                self.resolve_type(ok, span);
+                self.resolve_type(err, span);
             }
-            Type::Array(inner) => self.resolve_type(inner),
+            Type::Array(inner) => self.resolve_type(inner, span),
             _ => {}
         }
     }
@@ -300,26 +328,29 @@ impl SemanticAnalyzer {
         // Pass 1.5: Resolve types (upgrade Struct to Enum if it's actually an Enum)
         let mut resolved_functions = self.functions.clone();
         for (_, sig) in resolved_functions.iter_mut() {
+            let span = sig.span;
             for p in &mut sig.parameters {
-                self.resolve_type(p);
+                self.resolve_type(p, span);
             }
-            self.resolve_type(&mut sig.return_type);
+            self.resolve_type(&mut sig.return_type, span);
         }
         self.functions = resolved_functions;
 
         let mut resolved_structs = self.structs.clone();
         for (_, sig) in resolved_structs.iter_mut() {
+            let span = sig.span;
             for (_, ty) in sig.fields.iter_mut() {
-                self.resolve_type(ty);
+                self.resolve_type(ty, span);
             }
         }
         self.structs = resolved_structs;
 
         let mut resolved_enums = self.enums.clone();
         for (_, sig) in resolved_enums.iter_mut() {
+            let span = sig.span;
             for (_, ty) in sig.variants.iter_mut() {
                 for t in ty.iter_mut() {
-                    self.resolve_type(t);
+                    self.resolve_type(t, span);
                 }
             }
         }
@@ -337,7 +368,7 @@ impl SemanticAnalyzer {
                 let init_type = self.analyze_expression(initializer);
                 let mut resolved_type = type_annotation.clone();
                 if let Some(t) = &mut resolved_type {
-                    self.resolve_type(t);
+                    self.resolve_type(t, *span);
                 }
                 let final_type = if let Some(annotated_type) = &resolved_type {
                     if !self.types_compatible(annotated_type, &init_type) {
@@ -365,10 +396,11 @@ impl SemanticAnalyzer {
             Stmt::Function { name, parameters, return_type, is_async, body, span, doc_comment: _, attributes: _ } => {
                 let mut resolved_parameters = parameters.clone();
                 for param in &mut resolved_parameters {
-                    self.resolve_type(&mut param.ty);
+                    let p_span = param.span;
+                    self.resolve_type(&mut param.ty, p_span);
                 }
                 let mut resolved_return_type = return_type.clone();
-                self.resolve_type(&mut resolved_return_type);
+                self.resolve_type(&mut resolved_return_type, *span);
 
                 let mut ref_param_count = 0;
                 for param in &resolved_parameters {
@@ -647,6 +679,42 @@ impl SemanticAnalyzer {
                     Type::Unit
                 }
             }
+            Expr::Try(expr, span) => {
+                let inner_ty = self.analyze_expression(expr);
+                if let Type::Result(ok, err) = inner_ty {
+                    if let Some(Type::Result(_, func_err)) = &self.current_function_return_type {
+                        if !self.types_compatible(&func_err, &err) {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Try operator `?` error type mismatch: function returns `Result<_, {:?}>` but expression gives `Result<_, {:?}>`", func_err, err),
+                                "MER0161".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::new(
+                            "Cannot use `?` operator in a function that does not return `Result`".to_string(),
+                            "MER0162".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            Some("Change the function return type to `Result<T, E>`".to_string()),
+                        ));
+                    }
+                    *ok
+                } else if inner_ty != Type::Error {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Try operator `?` can only be applied to `Result`, found `{:?}`", inner_ty),
+                        "MER0163".to_string(),
+                        *span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                    Type::Error
+                } else {
+                    Type::Error
+                }
+            }
             Expr::Block(statements, _) => {
                 self.enter_scope();
                 let mut block_type = Type::Unit;
@@ -745,6 +813,48 @@ impl SemanticAnalyzer {
                                 *span,
                                 DiagnosticCategory::Semantic,
                                 Some("Wrap the call in an unsafe { ... } block.".to_string()),
+                            ));
+                        }
+                        
+                        // Capability checks
+                        let needs_net = ["tcp_bind", "tcp_accept", "tcp_read", "tcp_write"];
+                        let needs_fs = ["file_write", "file_append", "file_delete", "file_exists", "read_file"];
+                        let needs_run = ["process_output", "process_spawn"];
+                        let needs_ffi = ["dlopen", "dlsym", "dlcall"];
+                        
+                        let has_all = self.capabilities.contains("--allow-all");
+                        
+                        if needs_net.contains(&name.as_str()) && !has_all && !self.capabilities.contains("--allow-net") {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Call to '{}' requires the --allow-net capability", name),
+                                "MER0160".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                Some("Run the compiler/VM with the --allow-net flag.".to_string()),
+                            ));
+                        } else if needs_fs.contains(&name.as_str()) && !has_all && !self.capabilities.contains("--allow-fs") {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Call to '{}' requires the --allow-fs capability", name),
+                                "MER0160".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                Some("Run the compiler/VM with the --allow-fs flag.".to_string()),
+                            ));
+                        } else if needs_run.contains(&name.as_str()) && !has_all && !self.capabilities.contains("--allow-run") {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Call to '{}' requires the --allow-run capability", name),
+                                "MER0160".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                Some("Run the compiler/VM with the --allow-run flag.".to_string()),
+                            ));
+                        } else if needs_ffi.contains(&name.as_str()) && !has_all && !self.capabilities.contains("--allow-ffi") {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Call to '{}' requires the --allow-ffi capability", name),
+                                "MER0160".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                Some("Run the compiler/VM with the --allow-ffi flag.".to_string()),
                             ));
                         }
                         

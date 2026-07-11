@@ -340,6 +340,9 @@ impl JITCompiler {
                 Opcode::MakeEnum(..) | Opcode::CheckEnum(..) | Opcode::ExtractEnum(..) => {
                     unimplemented!("Enums not yet supported in Cranelift backend.");
                 }
+                Opcode::TryUnwrap(_, _) => {
+                    unimplemented!("TryUnwrap is not supported in Cranelift AOT MVP");
+                }
             }
         }
 

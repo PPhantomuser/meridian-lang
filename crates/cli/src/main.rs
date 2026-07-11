@@ -34,19 +34,53 @@ enum Commands {
         file: Option<String>,
         #[arg(long)]
         release: bool,
+        #[arg(long)]
+        allow_net: bool,
+        #[arg(long)]
+        allow_fs: bool,
+        #[arg(long)]
+        allow_run: bool,
+        #[arg(long)]
+        allow_all: bool,
     },
     Fetch,
     Ast { file: String },
-    Check { file: String },
+    Check { 
+        file: String,
+        #[arg(long)]
+        allow_net: bool,
+        #[arg(long)]
+        allow_fs: bool,
+        #[arg(long)]
+        allow_run: bool,
+        #[arg(long)]
+        allow_all: bool,
+    },
     Fmt { file: String },
     Lint { file: String },
     Test { 
         file: Option<String>,
         #[arg(long)]
         workspace: bool,
+        #[arg(long)]
+        allow_net: bool,
+        #[arg(long)]
+        allow_fs: bool,
+        #[arg(long)]
+        allow_run: bool,
+        #[arg(long)]
+        allow_all: bool,
     },
     Build {
         file: Option<String>,
+        #[arg(long)]
+        allow_net: bool,
+        #[arg(long)]
+        allow_fs: bool,
+        #[arg(long)]
+        allow_run: bool,
+        #[arg(long)]
+        allow_all: bool,
     },
     Audit,
     Lsp,
@@ -241,7 +275,7 @@ fn main() {
             }
             println!("Fetched dependencies successfully.");
         }
-        Commands::Build { file } => {
+        Commands::Build { file, allow_net, allow_fs, allow_run, allow_all } => {
             let mut visited = HashSet::new();
             let mut diagnostics = Vec::new();
             
@@ -281,6 +315,10 @@ fn main() {
                 }
 
                 let mut analyzer = SemanticAnalyzer::new();
+                if *allow_net { analyzer.capabilities.insert("--allow-net".to_string()); }
+                if *allow_fs { analyzer.capabilities.insert("--allow-fs".to_string()); }
+                if *allow_run { analyzer.capabilities.insert("--allow-run".to_string()); }
+                if *allow_all { analyzer.capabilities.insert("--allow-all".to_string()); }
                 analyzer.analyze_program(&program);
 
                 if !analyzer.diagnostics.is_empty() {
@@ -342,7 +380,7 @@ int main(int argc, char** argv) {
                 std::process::exit(1);
             }
         }
-        Commands::Run { file, release } => {
+        Commands::Run { file, release, allow_net, allow_fs, allow_run, allow_all } => {
             let mut visited = HashSet::new();
             let mut diagnostics = Vec::new();
             
@@ -400,6 +438,10 @@ int main(int argc, char** argv) {
             let program = program.unwrap();
 
             let mut semantic = SemanticAnalyzer::new();
+            if *allow_net { semantic.capabilities.insert("--allow-net".to_string()); }
+            if *allow_fs { semantic.capabilities.insert("--allow-fs".to_string()); }
+            if *allow_run { semantic.capabilities.insert("--allow-run".to_string()); }
+            if *allow_all { semantic.capabilities.insert("--allow-all".to_string()); }
             semantic.analyze_program(&program);
             
             if !semantic.diagnostics.is_empty() {
@@ -439,7 +481,7 @@ int main(int argc, char** argv) {
             let json = serde_json::to_string_pretty(&program.unwrap()).unwrap();
             println!("{}", json);
         }
-        Commands::Check { file } => {
+        Commands::Check { file, allow_net, allow_fs, allow_run, allow_all } => {
             let mut visited = HashSet::new();
             let mut diagnostics = Vec::new();
             let program = load_module(Path::new(file), &mut visited, &mut diagnostics, None);
@@ -452,6 +494,10 @@ int main(int argc, char** argv) {
             let program = program.unwrap();
 
             let mut semantic = SemanticAnalyzer::new();
+            if *allow_net { semantic.capabilities.insert("--allow-net".to_string()); }
+            if *allow_fs { semantic.capabilities.insert("--allow-fs".to_string()); }
+            if *allow_run { semantic.capabilities.insert("--allow-run".to_string()); }
+            if *allow_all { semantic.capabilities.insert("--allow-all".to_string()); }
             semantic.analyze_program(&program);
             
             if !semantic.diagnostics.is_empty() {
@@ -515,7 +561,7 @@ int main(int argc, char** argv) {
                 println!("[]");
             }
         }
-        Commands::Test { file, workspace } => {
+        Commands::Test { file, workspace, allow_net, allow_fs, allow_run, allow_all } => {
             let mut visited = HashSet::new();
             let mut diagnostics = Vec::new();
             let mut test_programs = Vec::new();
@@ -560,6 +606,10 @@ int main(int argc, char** argv) {
 
             for program in test_programs {
                 let mut semantic = SemanticAnalyzer::new();
+                if *allow_net { semantic.capabilities.insert("--allow-net".to_string()); }
+                if *allow_fs { semantic.capabilities.insert("--allow-fs".to_string()); }
+                if *allow_run { semantic.capabilities.insert("--allow-run".to_string()); }
+                if *allow_all { semantic.capabilities.insert("--allow-all".to_string()); }
                 semantic.analyze_program(&program);
                 
                 if !semantic.diagnostics.is_empty() {

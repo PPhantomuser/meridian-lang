@@ -459,6 +459,10 @@ impl Formatter {
                     self.output.push_str(")");
                 }
             }
+            Expr::Try(expr, _) => {
+                self.format_expr(expr);
+                self.output.push('?');
+            }
         }
     }
 

@@ -38,6 +38,7 @@ pub enum Opcode {
     MakeEnum(Register, String, String, Register, usize), // dest, enum_name, variant_name, value_start_reg, count
     CheckEnum(Register, Register, String), // dest (bool), obj, variant_name
     ExtractEnum(Register, Register, usize), // dest_start, obj (gets inner values), count
+    TryUnwrap(Register, Register),     // dest, src (unwraps Ok, returns if Err)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -683,10 +684,16 @@ impl Compiler {
                 dest
             }
             Expr::Spawn { expr, .. } => {
-                let src_future = self.compile_expr(expr);
+                let inner = self.compile_expr(expr);
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::Spawn(dest, src_future));
+                self.current_chunk.instructions.push(Opcode::Spawn(dest, inner));
                 dest
+            }
+            Expr::Try(expr, _) => {
+                let inner_reg = self.compile_expr(expr);
+                let dest_reg = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::TryUnwrap(dest_reg, inner_reg));
+                dest_reg
             }
             Expr::MacroCall { macro_name, arguments, .. } => {
                 if let Some((params, body)) = self.program_ir.macros.get(macro_name).cloned() {

@@ -168,6 +168,7 @@ impl Linter {
             Expr::Int(_, span) => span.clone(),
             Expr::Match { span, .. } => span.clone(),
             Expr::EnumInit { span, .. } => span.clone(),
+            Expr::Try(_, span) => span.clone(),
         }
     }
 

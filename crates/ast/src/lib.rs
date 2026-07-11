@@ -157,6 +157,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         span: Span,
     },
+    Try(Box<Expr>, Span),
     Index {
         object: Box<Expr>,
         index: Box<Expr>,
@@ -247,6 +248,7 @@ impl Expr {
             Expr::Assign { span, .. } => *span,
             Expr::Call { span, .. } => *span,
             Expr::MethodCall { span, .. } => *span,
+            Expr::Try(_, span) => *span,
             Expr::Index { span, .. } => *span,
             Expr::FieldAccess { span, .. } => *span,
             Expr::FieldAssign { span, .. } => *span,

@@ -1675,6 +1675,10 @@ impl<'a> Parser<'a> {
                     index: Box::new(index),
                     span,
                 };
+            } else if self.current_token.kind == TokenKind::Question {
+                self.advance(); // consume ?
+                let span = Span::new(left.span().start, self.current_token.span.end);
+                left = Expr::Try(Box::new(left), span);
             } else if self.current_token.kind == TokenKind::DotDot || self.current_token.kind == TokenKind::DotDotEqual {
                 let inclusive = self.current_token.kind == TokenKind::DotDotEqual;
                 self.advance();
@@ -1990,7 +1994,7 @@ impl<'a> Parser<'a> {
             | TokenKind::GreaterThanEqual => 5,
             TokenKind::DotDot | TokenKind::DotDotEqual => 4,
             TokenKind::Equal => 2,
-            TokenKind::Dot | TokenKind::LBracket => 40,
+            TokenKind::Dot | TokenKind::LBracket | TokenKind::Question => 40,
             _ => 0,
         }
     }

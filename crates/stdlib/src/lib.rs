@@ -555,6 +555,55 @@ pub fn register_all(vm: &mut VM) {
             }
         }),
     );
+    vm.register_native_function(
+        "string_split",
+        Box::new(|args: &[Value]| {
+            if args.len() != 2 {
+                return Value::Error("string_split expects 2 arguments (string, delimiter)".to_string());
+            }
+            if let (Value::String(s), Value::String(delim)) = (&args[0], &args[1]) {
+                let parts: Vec<Value> = s.split(delim).map(|part| Value::String(part.to_string())).collect();
+                Value::Array(std::sync::Arc::new(std::sync::Mutex::new(parts)))
+            } else {
+                Value::Error("string_split arguments must be strings".to_string())
+            }
+        }),
+    );
+
+    vm.register_native_function(
+        "string_contains",
+        Box::new(|args: &[Value]| {
+            if args.len() != 2 {
+                return Value::Error("string_contains expects 2 arguments (string, pattern)".to_string());
+            }
+            if let (Value::String(s), Value::String(pattern)) = (&args[0], &args[1]) {
+                Value::Bool(s.contains(pattern))
+            } else {
+                Value::Error("string_contains arguments must be strings".to_string())
+            }
+        }),
+    );
+
+    vm.register_native_function(
+        "string_substring",
+        Box::new(|args: &[Value]| {
+            if args.len() != 3 {
+                return Value::Error("string_substring expects 3 arguments (string, start, end)".to_string());
+            }
+            if let (Value::String(s), Value::Int(start), Value::Int(end)) = (&args[0], &args[1], &args[2]) {
+                let start_idx = (*start).max(0) as usize;
+                let end_idx = (*end).max(0) as usize;
+                
+                if start_idx <= end_idx && end_idx <= s.len() {
+                    Value::String(s[start_idx..end_idx].to_string())
+                } else {
+                    Value::Error("string_substring indices out of bounds".to_string())
+                }
+            } else {
+                Value::Error("string_substring arguments must be (String, Int, Int)".to_string())
+            }
+        }),
+    );
 }
 
 pub struct FFIFunction {
