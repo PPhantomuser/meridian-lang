@@ -1,0 +1,13 @@
+enum Shape {
+    Rectangle(num, num)
+}
+
+fn main() {
+    let r = Shape::Rectangle(3.0, 4.0);
+    match r {
+        Shape::Rectangle(w, h) => {
+            print w;
+            print h;
+        }
+    }
+}

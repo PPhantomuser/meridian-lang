@@ -292,8 +292,13 @@ fn main() {
                 let program_ir = compiler.compile(&program);
 
                 let aot = meridian_backend_cranelift::AOTCompiler::new();
-                let object_bytes = aot.compile_to_object(&program_ir);
-
+                let object_bytes = match aot.compile_to_object(&program_ir) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        eprintln!("AOT Compilation Error: {}", e);
+                        std::process::exit(1);
+                    }
+                };
                 let obj_path = entry_file.with_extension("o");
                 let bin_path = entry_file.with_extension("");
                 let c_runtime_path = entry_file.with_file_name("meridian_runtime.c");

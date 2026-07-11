@@ -66,7 +66,7 @@ impl AOTCompiler {
         }
     }
 
-    pub fn compile_to_object(mut self, program_ir: &ProgramIR) -> Vec<u8> {
+    pub fn compile_to_object(mut self, program_ir: &ProgramIR) -> Result<Vec<u8>, String> {
         for (name, (_chunk, _is_async, arg_count)) in &program_ir.functions {
             let mut sig = self.module.make_signature();
             for _ in 0..*arg_count {
@@ -90,7 +90,7 @@ impl AOTCompiler {
 
         for (name, (chunk, _is_async, arg_count)) in &program_ir.functions {
             let func_id = *self.functions.get(name).unwrap();
-            self.compile_chunk(chunk, *arg_count, true);
+            self.compile_chunk(chunk, *arg_count, true)?;
             self.module.define_function(func_id, &mut self.ctx).unwrap();
             self.module.clear_context(&mut self.ctx);
         }
@@ -99,15 +99,15 @@ impl AOTCompiler {
         main_sig.returns.push(AbiParam::new(types::I32));
         let main_func_id = self.module.declare_function("meridian_main", Linkage::Export, &main_sig).unwrap();
         
-        self.compile_chunk(&program_ir.main_chunk, 0, false);
+        self.compile_chunk(&program_ir.main_chunk, 0, false)?;
         self.module.define_function(main_func_id, &mut self.ctx).unwrap();
         self.module.clear_context(&mut self.ctx);
 
         let product = self.module.finish();
-        product.emit().unwrap()
+        Ok(product.emit().unwrap())
     }
 
-    fn compile_chunk(&mut self, chunk: &Chunk, arg_count: usize, has_return: bool) {
+    fn compile_chunk(&mut self, chunk: &Chunk, arg_count: usize, has_return: bool) -> Result<(), String> {
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
         
         for _ in 0..arg_count {
@@ -311,10 +311,10 @@ impl AOTCompiler {
                 Opcode::AsyncCall(..) |
                 Opcode::Await(..) |
                 Opcode::Spawn(..) => {
-                    panic!("Struct/Enum/Array/Async opcodes are not supported in AOT MVP (fallback to VM recommended)");
+                    return Err("Struct/Enum/Array/Async opcodes are not supported in AOT MVP (fallback to VM recommended)".to_string());
                 }
                 _ => {
-                    panic!("Unsupported opcode in AOT prototype: {:?}", inst);
+                    return Err(format!("Unsupported opcode in AOT prototype: {:?}", inst));
                 }
             }
         }
@@ -338,5 +338,6 @@ impl AOTCompiler {
 
         builder.seal_all_blocks();
         builder.finalize();
+        Ok(())
     }
 }

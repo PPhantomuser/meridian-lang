@@ -364,16 +364,19 @@ impl Compiler {
                 dest
             }
             Expr::EnumInit { enum_name, variant_name, values, .. } => {
-                let start_reg = self.next_reg;
+                let mut val_regs = Vec::new();
                 for v in values {
-                    let r = self.alloc_reg();
-                    let vr = self.compile_expr(v);
-                    if vr != r {
-                        self.current_chunk.instructions.push(Opcode::Move(r, vr));
-                    }
+                    val_regs.push(self.compile_expr(v));
                 }
+                
+                let start_reg = self.alloc_reg();
+                for (i, reg) in val_regs.iter().enumerate() {
+                    if i > 0 { self.alloc_reg(); }
+                    self.current_chunk.instructions.push(Opcode::Move(start_reg + i, *reg));
+                }
+                
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), start_reg, values.len()));
+                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), start_reg, val_regs.len()));
                 dest
             }
             Expr::Match { value, arms, .. } => {
