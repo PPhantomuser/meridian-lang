@@ -12,7 +12,7 @@ print content;";
 
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/read_self.mer"])
+        .args(["run", "--bin", "merid", "--", "run", "examples/read_self.mer", "--allow-fs"])
         .output()
         .expect("Failed to execute command");
     
