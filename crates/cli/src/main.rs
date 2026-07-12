@@ -43,7 +43,7 @@ enum Commands {
         #[arg(long)]
         allow_all: bool,
     },
-    Fetch,
+
     Ast { file: String },
     Check { 
         file: String,
@@ -84,7 +84,17 @@ enum Commands {
     },
     Audit,
     Lsp,
-    Publish,
+    Pkg {
+        #[command(subcommand)]
+        cmd: PkgCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PkgCommands {
+    Fetch,
+    Search { name: String },
+    Publish { source: String, commit: String },
 }
 
 fn print_diagnostics(diagnostics: &[Diagnostic], ai_mode: bool) {
@@ -250,30 +260,86 @@ fn main() {
         Commands::Lsp => {
             meridian_lsp::run_server();
         }
-        Commands::Fetch => {
-            let current_dir = std::env::current_dir().unwrap();
-            let toml_path = current_dir.join("Meridian.toml");
-            if !toml_path.exists() {
-                eprintln!("Error: Meridian.toml not found");
-                std::process::exit(1);
+        Commands::Pkg { cmd } => {
+            match cmd {
+                PkgCommands::Fetch => {
+                    let current_dir = std::env::current_dir().unwrap();
+                    let toml_path = current_dir.join("Meridian.toml");
+                    if !toml_path.exists() {
+                        eprintln!("Error: Meridian.toml not found");
+                        std::process::exit(1);
+                    }
+                    let toml_str = fs::read_to_string(&toml_path).unwrap();
+                    let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
+                        eprintln!("Failed to parse Meridian.toml: {}", e);
+                        std::process::exit(1);
+                    });
+                    
+                    let result = resolver::solve(&current_dir, &manifest, false);
+                    let mut has_errors = false;
+                    for diag in &result.diagnostics {
+                        let json = serde_json::to_string_pretty(diag).unwrap();
+                        eprintln!("{}", json);
+                        has_errors = true;
+                    }
+                    if has_errors {
+                        std::process::exit(1);
+                    }
+                    println!("Fetched dependencies successfully.");
+                }
+                PkgCommands::Search { name } => {
+                    if let Some(index) = resolver::registry::get_package_index(&name) {
+                        println!("Package: {}", index.name);
+                        println!("Available Versions:");
+                        for v in index.versions {
+                            println!("  - {} (source: {})", v.version, v.source);
+                        }
+                    } else {
+                        eprintln!("Package '{}' not found in registry.", name);
+                    }
+                }
+                PkgCommands::Publish { source, commit } => {
+                    let current_dir = std::env::current_dir().unwrap();
+                    let toml_path = current_dir.join("Meridian.toml");
+                    if !toml_path.exists() {
+                        eprintln!("Error: Meridian.toml not found in current directory.");
+                        std::process::exit(1);
+                    }
+                    
+                    let toml_str = fs::read_to_string(&toml_path).unwrap();
+                    let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
+                        eprintln!("Error parsing Meridian.toml: {}", e);
+                        std::process::exit(1);
+                    });
+                    
+                    let pkg_name = manifest.package.name;
+                    let version = manifest.package.version;
+                    
+                    let mut deps = HashMap::new();
+                    if let Some(dependencies) = manifest.dependencies {
+                        for (dep_name, dep) in dependencies {
+                            if let resolver::manifest::Dependency::Version(ver) = dep {
+                                deps.insert(dep_name, ver);
+                            }
+                        }
+                    }
+                    
+                    let deps_opt = if deps.is_empty() { None } else { Some(deps) };
+                    match resolver::registry::generate_publish_payload(&pkg_name, &version, &source, &commit, deps_opt) {
+                        Ok(json) => {
+                            println!("Successfully generated registry metadata for {} v{}!\n", pkg_name, version);
+                            println!("To publish your package, please submit a Pull Request to:");
+                            println!("https://github.com/meridian-lang/registry\n");
+                            println!("Add the following content to a file named `index/{}.json`:\n", pkg_name);
+                            println!("{}", json);
+                        }
+                        Err(e) => {
+                            eprintln!("Error generating metadata: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
             }
-            let toml_str = fs::read_to_string(&toml_path).unwrap();
-            let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
-                eprintln!("Failed to parse Meridian.toml: {}", e);
-                std::process::exit(1);
-            });
-            
-            let result = resolver::solve(&current_dir, &manifest, false);
-            let mut has_errors = false;
-            for diag in &result.diagnostics {
-                let json = serde_json::to_string_pretty(diag).unwrap();
-                eprintln!("{}", json);
-                has_errors = true;
-            }
-            if has_errors {
-                std::process::exit(1);
-            }
-            println!("Fetched dependencies successfully.");
         }
         Commands::Build { file, allow_net, allow_fs, allow_run, allow_all } => {
             let mut visited = HashSet::new();
@@ -326,7 +392,7 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                let mut compiler = Compiler::new(analyzer.type_map);
+                let mut compiler = Compiler::new(analyzer.type_map, analyzer.resolved_names);
                 let program_ir = compiler.compile(&program);
 
                 let aot = meridian_backend_cranelift::AOTCompiler::new();
@@ -435,7 +501,7 @@ int main(int argc, char** argv) {
                 std::process::exit(1);
             }
 
-            let program = program.unwrap();
+            let mut program = program.unwrap();
 
             let mut semantic = SemanticAnalyzer::new();
             if *allow_net { semantic.capabilities.insert("--allow-net".to_string()); }
@@ -449,7 +515,8 @@ int main(int argc, char** argv) {
                 std::process::exit(1);
             }
 
-            let compiler = Compiler::new(semantic.type_map);
+            program.statements.extend(semantic.get_monomorphized_statements());
+            let compiler = Compiler::new(semantic.type_map, semantic.resolved_names);
             let program_ir = compiler.compile(&program);
 
             if *release {
@@ -604,7 +671,7 @@ int main(int argc, char** argv) {
             let mut all_coverage = HashMap::new();
             let mut total_ir_instructions = 0;
 
-            for program in test_programs {
+            for mut program in test_programs {
                 let mut semantic = SemanticAnalyzer::new();
                 if *allow_net { semantic.capabilities.insert("--allow-net".to_string()); }
                 if *allow_fs { semantic.capabilities.insert("--allow-fs".to_string()); }
@@ -630,7 +697,8 @@ int main(int argc, char** argv) {
                     continue;
                 }
 
-                let compiler = Compiler::new(semantic.type_map);
+                program.statements.extend(semantic.get_monomorphized_statements());
+                let compiler = Compiler::new(semantic.type_map, semantic.resolved_names);
                 let program_ir = compiler.compile(&program);
 
                 for (_, (chunk, _, _)) in &program_ir.functions {
@@ -694,41 +762,6 @@ int main(int argc, char** argv) {
                 std::process::exit(1);
             }
         }
-        Commands::Publish => {
-            let current_dir = std::env::current_dir().unwrap();
-            let toml_path = current_dir.join("Meridian.toml");
-            if !toml_path.exists() {
-                eprintln!("Error: Meridian.toml not found in current directory.");
-                std::process::exit(1);
-            }
-            
-            let toml_str = fs::read_to_string(&toml_path).unwrap();
-            let manifest: resolver::manifest::MeridianManifest = toml::from_str(&toml_str).unwrap_or_else(|e| {
-                eprintln!("Error parsing Meridian.toml: {}", e);
-                std::process::exit(1);
-            });
-            
-            let pkg_name = manifest.package.name;
-            let version = manifest.package.version;
-            
-            let mut deps = HashMap::new();
-            if let Some(dependencies) = manifest.dependencies {
-                for (dep_name, dep) in dependencies {
-                    if let resolver::manifest::Dependency::Version(ver) = dep {
-                        deps.insert(dep_name, ver);
-                    }
-                }
-            }
-            
-            match resolver::registry::publish_package(&pkg_name, &version, &current_dir, Some(deps)) {
-                Ok(_) => {
-                    println!("Successfully published {} v{}", pkg_name, version);
-                }
-                Err(e) => {
-                    eprintln!("Error publishing package: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
+
     }
 }

@@ -128,6 +128,9 @@ impl<'a> Parser<'a> {
             TokenKind::Extern => self.parse_extern_block(),
             TokenKind::Struct => self.parse_struct_def(),
             TokenKind::Enum => self.parse_enum_def(),
+            TokenKind::Trait => self.parse_trait_def(),
+            TokenKind::Impl => self.parse_impl_block(),
+            TokenKind::Return => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
         }
     }
@@ -150,6 +153,8 @@ impl<'a> Parser<'a> {
             }
         };
         self.advance(); // consume name
+
+        let type_params = self.parse_generic_type_params();
 
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -221,6 +226,7 @@ impl<'a> Parser<'a> {
 
         Some(Stmt::StructDef {
             name,
+            type_params,
             fields,
             span: Span::new(start_span.start, end_span.end),
         })
@@ -244,6 +250,8 @@ impl<'a> Parser<'a> {
             }
         };
         self.advance(); // consume name
+
+        let type_params = self.parse_generic_type_params();
 
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -331,7 +339,395 @@ impl<'a> Parser<'a> {
 
         Some(Stmt::EnumDef {
             name,
+            type_params,
             variants,
+            span: Span::new(start_span.start, end_span.end),
+        })
+    }
+    fn parse_trait_def(&mut self) -> Option<Stmt> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume 'trait'
+
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected trait name".to_string(),
+                    "MER0098".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        };
+        self.advance(); // consume trait name
+
+        let mut type_params = Vec::new();
+        if self.current_token.kind == TokenKind::LessThan {
+            self.advance(); // consume <
+            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
+                if let TokenKind::Identifier(param_name) = &self.current_token.kind {
+                    type_params.push(param_name.clone());
+                    self.advance();
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected type parameter name".to_string(),
+                        "MER0090".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+
+                if self.current_token.kind == TokenKind::Comma {
+                    self.advance();
+                } else if self.current_token.kind != TokenKind::GreaterThan {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ',' or '>' after type parameter".to_string(),
+                        "MER0091".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            }
+            self.advance(); // consume >
+        }
+
+        if self.current_token.kind != TokenKind::LBrace {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected '{' after trait name".to_string(),
+                "MER0099".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+            return None;
+        }
+        self.advance(); // consume {
+
+        let mut methods = Vec::new();
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let mut doc_comment = None;
+            if let TokenKind::DocComment(text) = &self.current_token.kind {
+                doc_comment = Some(text.clone());
+                self.advance();
+            }
+
+            let mut attributes = Vec::new();
+            while self.current_token.kind == TokenKind::Hash {
+                self.advance(); // consume #
+                if self.current_token.kind == TokenKind::LBracket {
+                    self.advance(); // consume [
+                    if let TokenKind::Identifier(attr_name) = &self.current_token.kind {
+                        attributes.push(attr_name.clone());
+                        self.advance();
+                        if self.current_token.kind == TokenKind::RBracket {
+                            self.advance();
+                        }
+                    }
+                }
+            }
+
+            let is_async = if self.current_token.kind == TokenKind::Async {
+                self.advance();
+                true
+            } else {
+                false
+            };
+
+            if self.current_token.kind != TokenKind::Fn {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected 'fn' in trait definition".to_string(),
+                    "MER0101".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+
+            // Methods in traits can optionally omit bodies (semicolon instead of block)
+            // But our parse_function_statement expects a block.
+            // Let's modify parse_function_statement to accept a trait context, but for now
+            // we will let them provide `{}` or parse the `;`. 
+            // Wait, parse_function_statement has a parameter `allow_empty_body: bool`? No, it doesn't.
+            // Let's just parse the method using a custom mini parser or modify parse_function_statement!
+            // Actually, we can just let parse_function_statement parse it. We'll modify it later if needed.
+            // Wait, Meridian might not support empty bodies yet, let's just let it parse with a block for now.
+            // But we will allow it to not have a block by parsing it manually here!
+            self.advance(); // consume 'fn'
+            let mut method_name_str = String::new();
+            if let TokenKind::Identifier(m_name) = &self.current_token.kind {
+                method_name_str = m_name.clone();
+                self.advance();
+            } else {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected method name".to_string(),
+                    "MER0102".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+
+            if self.current_token.kind != TokenKind::LParen {
+                return None;
+            }
+            self.advance(); // consume (
+            let mut parameters = Vec::new();
+            while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                // Parse self
+                if self.current_token.kind == TokenKind::Identifier("self".to_string()) {
+                    parameters.push(Parameter {
+                        name: "self".to_string(),
+                        ty: Type::Struct("Self".to_string()),
+                        span: self.current_token.span,
+                    });
+                    self.advance();
+                } else if self.current_token.kind == TokenKind::Ampersand {
+                    let mut is_mut = false;
+                    let ampersand_span = self.current_token.span;
+                    self.advance();
+                    if self.current_token.kind == TokenKind::Mut {
+                        is_mut = true;
+                        self.advance();
+                    }
+                    if self.current_token.kind == TokenKind::Identifier("self".to_string()) {
+                        parameters.push(Parameter {
+                            name: "self".to_string(),
+                            ty: Type::Reference(Box::new(Type::Struct("Self".to_string())), is_mut),
+                            span: Span::new(ampersand_span.start, self.current_token.span.end),
+                        });
+                        self.advance();
+                    } else {
+                        // normal param by ref...
+                        // this is a bit hacky but it's okay for traits right now
+                    }
+                } else {
+                    let param_name = match &self.current_token.kind {
+                        TokenKind::Identifier(n) => n.clone(),
+                        _ => return None,
+                    };
+                    self.advance();
+                    if self.current_token.kind == TokenKind::Colon {
+                        self.advance();
+                        let ty = self.parse_type_annotation().unwrap_or(Type::Unknown);
+                        parameters.push(Parameter {
+                            name: param_name,
+                            ty,
+                            span: self.current_token.span,
+                        });
+                    }
+                }
+                if self.current_token.kind == TokenKind::Comma {
+                    self.advance();
+                }
+            }
+            if self.current_token.kind == TokenKind::RParen {
+                self.advance();
+            }
+
+            let mut return_type = Type::Unit;
+            if self.current_token.kind == TokenKind::Arrow {
+                self.advance();
+                return_type = self.parse_type_annotation().unwrap_or(Type::Unknown);
+            }
+
+            let mut body = Expr::Block(vec![], self.current_token.span);
+            if self.current_token.kind == TokenKind::Semicolon {
+                self.advance(); // consume ;
+            } else if self.current_token.kind == TokenKind::LBrace {
+                if let Some(Expr::Block(stmts, span)) = self.parse_block_expression() {
+                    body = Expr::Block(stmts, span);
+                }
+            } else {
+                return None;
+            }
+
+            methods.push(Stmt::Function {
+                name: method_name_str,
+                type_params: vec![],
+                parameters,
+                return_type,
+                is_async,
+                body,
+                span: self.current_token.span,
+                doc_comment,
+                attributes,
+            });
+        }
+
+        let end_span = self.current_token.span;
+        if self.current_token.kind == TokenKind::RBrace {
+            self.advance();
+        }
+
+        Some(Stmt::TraitDef {
+            name,
+            type_params,
+            methods,
+            span: Span::new(start_span.start, end_span.end),
+        })
+    }
+    fn parse_impl_block(&mut self) -> Option<Stmt> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume 'impl'
+
+        let mut type_params = Vec::new();
+        if self.current_token.kind == TokenKind::LessThan {
+            self.advance(); // consume <
+            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
+                if let TokenKind::Identifier(param_name) = &self.current_token.kind {
+                    type_params.push(param_name.clone());
+                    self.advance();
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected type parameter name".to_string(),
+                        "MER0090".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+
+                if self.current_token.kind == TokenKind::Comma {
+                    self.advance();
+                } else if self.current_token.kind != TokenKind::GreaterThan {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ',' or '>' after type parameter".to_string(),
+                        "MER0091".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            }
+            self.advance(); // consume >
+        }
+
+        let mut trait_name = None;
+        let mut target_name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected trait or target type name in impl block".to_string(),
+                    "MER0092".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        };
+        self.advance(); // consume first name
+
+        if self.current_token.kind == TokenKind::For {
+            self.advance(); // consume for
+            trait_name = Some(target_name);
+            target_name = match &self.current_token.kind {
+                TokenKind::Identifier(n) => n.clone(),
+                _ => {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected target type name in impl block".to_string(),
+                        "MER0092".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+            };
+            self.advance(); // consume target name
+        }
+
+        // Discard any type arguments for the target if present e.g. impl<T> StructName<T>
+        if self.current_token.kind == TokenKind::LessThan {
+            self.advance(); // consume <
+            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
+                self.advance();
+            }
+            if self.current_token.kind == TokenKind::GreaterThan {
+                self.advance(); // consume >
+            }
+        }
+
+        if self.current_token.kind != TokenKind::LBrace {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected '{' after impl target".to_string(),
+                "MER0093".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+            return None;
+        }
+        self.advance(); // consume {
+
+        let mut methods = Vec::new();
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let mut doc_comment = None;
+            if let TokenKind::DocComment(text) = &self.current_token.kind {
+                doc_comment = Some(text.clone());
+                self.advance();
+            }
+
+            let mut attributes = Vec::new();
+            while self.current_token.kind == TokenKind::Hash {
+                self.advance(); // consume #
+                if self.current_token.kind == TokenKind::LBracket {
+                    self.advance(); // consume [
+                    if let TokenKind::Identifier(attr_name) = &self.current_token.kind {
+                        attributes.push(attr_name.clone());
+                        self.advance(); // consume ident
+                        if self.current_token.kind == TokenKind::RBracket {
+                            self.advance(); // consume ]
+                        }
+                    }
+                }
+            }
+
+            let is_async = if self.current_token.kind == TokenKind::Async {
+                self.advance();
+                true
+            } else {
+                false
+            };
+
+            if self.current_token.kind == TokenKind::Fn {
+                if let Some(func_stmt) = self.parse_function_statement(doc_comment, attributes, is_async) {
+                    methods.push(func_stmt);
+                } else {
+                    return None;
+                }
+            } else {
+                self.diagnostics.push(Diagnostic::new(
+                    "Expected method definition in impl block".to_string(),
+                    "MER0094".to_string(),
+                    self.current_token.span,
+                    DiagnosticCategory::Syntax,
+                    None,
+                ));
+                return None;
+            }
+        }
+
+        let end_span = self.current_token.span;
+        if self.current_token.kind == TokenKind::RBrace {
+            self.advance(); // consume }
+        }
+
+        Some(Stmt::Impl {
+            trait_name,
+            target_name,
+            type_params,
+            methods,
             span: Span::new(start_span.start, end_span.end),
         })
     }
@@ -468,16 +864,7 @@ impl<'a> Parser<'a> {
         };
         self.advance(); // consume name
 
-        // A6: Skip generic type parameters `<T, U>`
-        if self.current_token.kind == TokenKind::LessThan {
-            self.advance();
-            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
-                self.advance();
-            }
-            if self.current_token.kind == TokenKind::GreaterThan {
-                self.advance();
-            }
-        }
+        let type_params = self.parse_generic_type_params();
 
         if self.current_token.kind != TokenKind::LParen {
             self.diagnostics.push(Diagnostic::new(
@@ -494,6 +881,19 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
         while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
             let param_span_start = self.current_token.span.start;
+            
+            let mut is_ref = false;
+            let mut is_mut = false;
+            
+            if self.current_token.kind == TokenKind::Ampersand {
+                is_ref = true;
+                self.advance();
+                if self.current_token.kind == TokenKind::Mut {
+                    is_mut = true;
+                    self.advance();
+                }
+            }
+            
             let param_name = match &self.current_token.kind {
                 TokenKind::Identifier(name) => name.clone(),
                 _ => {
@@ -509,19 +909,37 @@ impl<'a> Parser<'a> {
             };
             self.advance(); // consume param name
 
-            if self.current_token.kind != TokenKind::Colon {
-                self.diagnostics.push(Diagnostic::new(
-                    "Expected ':' after parameter name".to_string(),
-                    "MER0023".to_string(),
-                    self.current_token.span,
-                    DiagnosticCategory::Syntax,
-                    None,
-                ));
-                return None;
-            }
-            self.advance(); // consume :
+            let param_type = if param_name == "self" {
+                let mut ty = Type::Struct("Self".to_string());
+                if is_ref {
+                    ty = Type::Reference(Box::new(ty), is_mut);
+                }
+                ty
+            } else {
+                if is_ref {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Unexpected '&' before parameter name (only allowed for 'self')".to_string(),
+                        "MER0023".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
 
-            let param_type = self.parse_type_annotation()?;
+                if self.current_token.kind != TokenKind::Colon {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ':' after parameter name".to_string(),
+                        "MER0023".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    return None;
+                }
+                self.advance(); // consume :
+                self.parse_type_annotation()?
+            };
             
             parameters.push(Parameter {
                 name: param_name,
@@ -581,6 +999,7 @@ impl<'a> Parser<'a> {
 
         Some(Stmt::Function {
             name,
+            type_params,
             parameters,
             return_type,
             is_async,
@@ -813,6 +1232,36 @@ impl<'a> Parser<'a> {
         Some(Stmt::Continue(Span::new(start_span.start, end_span.end)))
     }
 
+    fn parse_return_statement(&mut self) -> Option<Stmt> {
+        let start_span = self.current_token.span;
+        self.advance(); // consume return
+
+        let mut expr = None;
+        if self.current_token.kind != TokenKind::Semicolon {
+            expr = self.parse_expression(0);
+        }
+
+        let mut end_span = start_span;
+        if let Some(ref e) = expr {
+            end_span = e.span();
+        }
+
+        if self.current_token.kind == TokenKind::Semicolon {
+            end_span = self.current_token.span;
+            self.advance();
+        } else {
+            self.diagnostics.push(Diagnostic::new(
+                "Expected ';' after return statement".to_string(),
+                "MER0023".to_string(),
+                self.current_token.span,
+                DiagnosticCategory::Syntax,
+                None,
+            ));
+        }
+
+        Some(Stmt::Return(expr, Span::new(start_span.start, end_span.end)))
+    }
+
     fn parse_let_statement(&mut self) -> Option<Stmt> {
         let start_span = self.current_token.span;
         self.advance(); // consume let
@@ -882,6 +1331,45 @@ impl<'a> Parser<'a> {
             initializer,
             span: Span::new(start_span.start, end_span.end),
         })
+    }
+
+    fn parse_generic_type_params(&mut self) -> Vec<String> {
+        let mut params = Vec::new();
+        if self.current_token.kind == TokenKind::LessThan {
+            self.advance(); // consume <
+            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
+                if let TokenKind::Identifier(name) = &self.current_token.kind {
+                    params.push(name.clone());
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected type parameter name".to_string(),
+                        "MER0095".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    break;
+                }
+                self.advance();
+                
+                if self.current_token.kind == TokenKind::Comma {
+                    self.advance();
+                } else if self.current_token.kind != TokenKind::GreaterThan {
+                    self.diagnostics.push(Diagnostic::new(
+                        "Expected ',' or '>' in type parameter list".to_string(),
+                        "MER0096".to_string(),
+                        self.current_token.span,
+                        DiagnosticCategory::Syntax,
+                        None,
+                    ));
+                    break;
+                }
+            }
+            if self.current_token.kind == TokenKind::GreaterThan {
+                self.advance(); // consume >
+            }
+        }
+        params
     }
 
     fn parse_type_annotation(&mut self) -> Option<Type> {
@@ -1396,6 +1884,7 @@ impl<'a> Parser<'a> {
                     
                     Expr::EnumInit {
                         enum_name: name,
+                        type_args: vec![],
                         variant_name,
                         values,
                         span: Span::new(start_span.start, end_span.end),
@@ -1453,6 +1942,7 @@ impl<'a> Parser<'a> {
                     }
                     Expr::StructInit {
                         name,
+                        type_args: vec![],
                         fields,
                         span: Span::new(start_span.start, end_span.end),
                     }

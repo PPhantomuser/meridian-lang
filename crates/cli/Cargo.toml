@@ -25,6 +25,7 @@ meridian-lsp = { package = "meridian-lsp", path = "../lsp" }
 tar = "0.4.46"
 flate2 = "1.1.9"
 meridian_lint = { version = "0.1.0", path = "../lint" }
+ureq.workspace = true
 
 [[bin]]
 name = "merid"

@@ -1,0 +1,20 @@
+trait Printable {
+    fn print_info(&self) -> Unit;
+}
+
+struct Logger {
+    level: Int
+}
+
+impl Printable for Logger {
+    fn print_info(&self) -> Unit {
+        print("Logger info: ");
+        print(self.level);
+    }
+}
+
+fn main() -> Unit {
+    let mut log = Logger { level: 42 };
+    let log_ref = &log;
+    log_ref.print_info();
+}

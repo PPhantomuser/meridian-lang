@@ -28,6 +28,7 @@ struct FunctionSignature {
     return_type: Type,
     span: Span,
     is_extern: bool,
+    type_params: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -41,6 +42,7 @@ struct MacroDefinition {
 struct StructSignature {
     fields: HashMap<String, Type>,
     span: Span,
+    type_params: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -48,6 +50,14 @@ struct StructSignature {
 struct EnumSignature {
     variants: HashMap<String, Vec<Type>>,
     span: Span,
+    type_params: Vec<String>,
+}
+
+#[derive(Clone)]
+struct TraitSignature {
+    methods: HashMap<String, FunctionSignature>,
+    span: Span,
+    type_params: Vec<String>,
 }
 
 pub struct SemanticAnalyzer {
@@ -57,12 +67,23 @@ pub struct SemanticAnalyzer {
     macros: HashMap<String, MacroDefinition>,
     structs: HashMap<String, StructSignature>,
     enums: HashMap<String, EnumSignature>,
+    traits: HashMap<String, TraitSignature>,
+    methods: HashMap<String, HashMap<String, FunctionSignature>>,
+    
+    // For monomorphization
+    generic_functions: HashMap<String, Stmt>,
+    generic_structs: HashMap<String, Stmt>,
+    generic_enums: HashMap<String, Stmt>,
+    monomorphized_stmts: Vec<Stmt>,
+
     current_function_return_type: Option<Type>,
+    current_impl_target: Option<String>,
     in_loop_depth: usize,
     macro_expansion_depth: usize,
     in_unsafe_block: bool,
     pub index: SemanticIndex,
-    pub type_map: HashMap<Span, Type>,
+    pub type_map: std::collections::HashMap<Span, Type>,
+    pub resolved_names: std::collections::HashMap<Span, String>,
     pub capabilities: std::collections::HashSet<String>,
 }
 
@@ -75,12 +96,20 @@ impl SemanticAnalyzer {
             macros: HashMap::new(),
             structs: HashMap::new(),
             enums: HashMap::new(),
+            traits: HashMap::new(),
+            methods: HashMap::new(),
+            generic_functions: HashMap::new(),
+            generic_structs: HashMap::new(),
+            generic_enums: HashMap::new(),
+            monomorphized_stmts: Vec::new(),
             current_function_return_type: None,
+            current_impl_target: None,
             in_loop_depth: 0,
             macro_expansion_depth: 0,
             in_unsafe_block: false,
             index: SemanticIndex::default(),
-            type_map: HashMap::new(),
+            type_map: std::collections::HashMap::new(),
+            resolved_names: std::collections::HashMap::new(),
             capabilities: std::collections::HashSet::new(),
         };
         // Register standard library
@@ -126,6 +155,7 @@ impl SemanticAnalyzer {
             return_type: ret,
             span: Span::new(0, 0),
             is_extern: false,
+            type_params: vec![],
         });
     }
 
@@ -147,13 +177,21 @@ impl SemanticAnalyzer {
                 self.types_compatible(inner1, inner2)
             }
             (Type::Reference(inner1, mut1), Type::Reference(inner2, mut2)) => {
-                mut1 == mut2 && self.types_compatible(inner1, inner2)
+                (*mut1 == *mut2 || (!*mut1 && *mut2)) && self.types_compatible(inner1, inner2)
             }
             _ => false,
         }
     }
 
     fn resolve_type(&mut self, ty: &mut Type, span: Span) {
+        if let Type::Struct(name) = ty {
+            if name == "Self" {
+                if let Some(target) = &self.current_impl_target {
+                    *ty = Type::Struct(target.clone());
+                    return;
+                }
+            }
+        }
         match ty {
             Type::Struct(name) => {
                 if self.enums.contains_key(name) {
@@ -171,9 +209,98 @@ impl SemanticAnalyzer {
             }
             Type::Reference(inner, _) => self.resolve_type(inner, span),
             Type::Future(inner) => self.resolve_type(inner, span),
-            Type::Generic(_, type_args) => {
-                for arg in type_args {
+            Type::Generic(name, type_args) => {
+                for arg in type_args.iter_mut() {
                     self.resolve_type(arg, span);
+                }
+                
+                let type_args_strings: Vec<String> = type_args.iter().map(meridian_ast::type_to_string).collect();
+                let mono_name = format!("{}_{}", name, type_args_strings.join("_"));
+                self.resolved_names.insert(span, mono_name.clone());
+                
+                if self.structs.contains_key(&mono_name) {
+                    *ty = Type::Struct(mono_name);
+                } else if self.enums.contains_key(&mono_name) {
+                    *ty = Type::Enum(mono_name);
+                } else if let Some(generic_stmt) = self.generic_structs.get(name).cloned() {
+                    if let Stmt::StructDef { type_params, fields: _, .. } = &generic_stmt {
+                        if type_params.len() != type_args.len() {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Struct '{}' expects {} type arguments, but {} were provided", name, type_params.len(), type_args.len()),
+                                "MER0200".to_string(),
+                                span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            *ty = Type::Error;
+                            return;
+                        }
+                        
+                        let mut type_bindings = HashMap::new();
+                        for (i, param) in type_params.iter().enumerate() {
+                            type_bindings.insert(param.clone(), type_args[i].clone());
+                        }
+                        
+                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                        if let Stmt::StructDef { name: mono_stmt_name, fields, .. } = &mut mono_stmt {
+                            *mono_stmt_name = mono_name.clone();
+                            let mut field_map = HashMap::new();
+                            for param in fields {
+                                field_map.insert(param.name.clone(), param.ty.clone());
+                            }
+                            self.structs.insert(mono_name.clone(), StructSignature {
+                                fields: field_map,
+                                span,
+                                type_params: vec![],
+                            });
+                        }
+                        self.monomorphized_stmts.push(mono_stmt);
+                        *ty = Type::Struct(mono_name);
+                    }
+                } else if let Some(generic_stmt) = self.generic_enums.get(name).cloned() {
+                    if let Stmt::EnumDef { type_params, variants: _, .. } = &generic_stmt {
+                        if type_params.len() != type_args.len() {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Enum '{}' expects {} type arguments, but {} were provided", name, type_params.len(), type_args.len()),
+                                "MER0200".to_string(),
+                                span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            *ty = Type::Error;
+                            return;
+                        }
+                        
+                        let mut type_bindings = HashMap::new();
+                        for (i, param) in type_params.iter().enumerate() {
+                            type_bindings.insert(param.clone(), type_args[i].clone());
+                        }
+                        
+                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                        if let Stmt::EnumDef { name: mono_stmt_name, variants, .. } = &mut mono_stmt {
+                            *mono_stmt_name = mono_name.clone();
+                            let mut var_map = HashMap::new();
+                            for (v_name, v_type) in variants {
+                                var_map.insert(v_name.clone(), v_type.clone());
+                            }
+                            self.enums.insert(mono_name.clone(), EnumSignature {
+                                variants: var_map,
+                                span,
+                                type_params: vec![],
+                            });
+                        }
+                        self.monomorphized_stmts.push(mono_stmt);
+                        *ty = Type::Enum(mono_name);
+                    }
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Unknown generic type '{}'", name),
+                        "MER0201".to_string(),
+                        span,
+                        DiagnosticCategory::Type,
+                        None,
+                    ));
+                    *ty = Type::Error;
                 }
             }
             Type::Option(inner) => self.resolve_type(inner, span),
@@ -263,10 +390,16 @@ impl SemanticAnalyzer {
         None
     }
 
+    pub fn get_monomorphized_statements(&mut self) -> Vec<Stmt> {
+        let mut stmts = Vec::new();
+        std::mem::swap(&mut stmts, &mut self.monomorphized_stmts);
+        stmts
+    }
+
     pub fn analyze_program(&mut self, program: &Program) {
         // Pass 1: Hoist functions
         for stmt in &program.statements {
-            if let Stmt::Function { name, parameters, return_type, span, .. } = stmt {
+            if let Stmt::Function { name, type_params, parameters, return_type, span, .. } = stmt {
                 if self.functions.contains_key(name) {
                     self.diagnostics.push(Diagnostic::new(
                         format!("Function '{}' is already defined", name),
@@ -282,12 +415,16 @@ impl SemanticAnalyzer {
                         return_type: return_type.clone(),
                         span: *span,
                         is_extern: false,
+                        type_params: type_params.clone(),
                     });
                     self.index.definitions.insert(name.clone(), *span);
+                    if !type_params.is_empty() {
+                        self.generic_functions.insert(name.clone(), stmt.clone());
+                    }
                 }
             } else if let Stmt::ExternBlock { functions, .. } = stmt {
                 for func in functions {
-                    if let Stmt::Function { name, parameters, return_type, span, .. } = func {
+                    if let Stmt::Function { name, type_params, parameters, return_type, span, .. } = func {
                         if self.functions.contains_key(name) {
                             self.diagnostics.push(Diagnostic::new(
                                 format!("Function '{}' is already defined", name),
@@ -303,54 +440,131 @@ impl SemanticAnalyzer {
                                 return_type: return_type.clone(),
                                 span: *span,
                                 is_extern: true,
+                                type_params: type_params.clone(),
                             });
                             self.index.definitions.insert(name.clone(), *span);
+                            if !type_params.is_empty() {
+                                self.generic_functions.insert(name.clone(), func.clone());
+                            }
                         }
                     }
                 }
-            } else if let Stmt::StructDef { name, fields, span } = stmt {
+            } else if let Stmt::StructDef { name, type_params, fields, span } = stmt {
                 let mut field_map = HashMap::new();
                 for param in fields {
                     field_map.insert(param.name.clone(), param.ty.clone());
                 }
-                self.structs.insert(name.clone(), StructSignature { fields: field_map, span: *span });
+                self.structs.insert(name.clone(), StructSignature { fields: field_map, span: *span, type_params: type_params.clone() });
                 self.index.definitions.insert(name.clone(), *span);
-            } else if let Stmt::EnumDef { name, variants, span } = stmt {
+                if !type_params.is_empty() {
+                    self.generic_structs.insert(name.clone(), stmt.clone());
+                }
+            } else if let Stmt::EnumDef { name, type_params, variants, span } = stmt {
                 let mut var_map = HashMap::new();
                 for (v_name, v_type) in variants {
                     var_map.insert(v_name.clone(), v_type.clone());
                 }
-                self.enums.insert(name.clone(), EnumSignature { variants: var_map, span: *span });
+                self.enums.insert(name.clone(), EnumSignature { variants: var_map, span: *span, type_params: type_params.clone() });
                 self.index.definitions.insert(name.clone(), *span);
+                if !type_params.is_empty() {
+                    self.generic_enums.insert(name.clone(), stmt.clone());
+                }
+            } else if let Stmt::TraitDef { name, type_params, methods, span } = stmt {
+                let mut trait_methods = HashMap::new();
+                for method in methods {
+                    if let Stmt::Function { name: m_name, type_params: m_type_params, parameters: m_parameters, return_type: m_return_type, span: m_span, .. } = method {
+                        let param_types = m_parameters.iter().map(|p| p.ty.clone()).collect();
+                        trait_methods.insert(m_name.clone(), FunctionSignature {
+                            parameters: param_types,
+                            return_type: m_return_type.clone(),
+                            span: *m_span,
+                            is_extern: false,
+                            type_params: m_type_params.clone(),
+                        });
+                    }
+                }
+                self.traits.insert(name.clone(), TraitSignature {
+                    methods: trait_methods,
+                    span: *span,
+                    type_params: type_params.clone(),
+                });
+                self.index.definitions.insert(name.clone(), *span);
+            } else if let Stmt::Impl { trait_name: _, target_name, type_params: _, methods, span: _ } = stmt {
+                let target_methods = self.methods.entry(target_name.clone()).or_insert_with(HashMap::new);
+                for method in methods {
+                    if let Stmt::Function { name: m_name, type_params: m_type_params, parameters: m_parameters, return_type: m_return_type, span: m_span, .. } = method {
+                        let mut param_types = Vec::new();
+                        for p in m_parameters {
+                            let mut ty = p.ty.clone();
+                            // Expand `Self` to `target_name`
+                            if let Type::Struct(n) = &ty {
+                                if n == "Self" {
+                                    ty = Type::Struct(target_name.clone());
+                                }
+                            } else if let Type::Reference(inner, is_mut) = &ty {
+                                if let Type::Struct(n) = &**inner {
+                                    if n == "Self" {
+                                        ty = Type::Reference(Box::new(Type::Struct(target_name.clone())), *is_mut);
+                                    }
+                                }
+                            }
+                            param_types.push(ty);
+                        }
+                        
+                        target_methods.insert(m_name.clone(), FunctionSignature {
+                            parameters: param_types,
+                            return_type: m_return_type.clone(),
+                            span: *m_span,
+                            is_extern: false,
+                            type_params: m_type_params.clone(),
+                        });
+                        
+                        // We also need to add them to `self.functions` as mangled names for generic monomorphization to work!
+                        let mangled_name = format!("{}_{}", target_name, m_name);
+                        self.functions.insert(mangled_name.clone(), FunctionSignature {
+                            parameters: target_methods.get(m_name).unwrap().parameters.clone(),
+                            return_type: m_return_type.clone(),
+                            span: *m_span,
+                            is_extern: false,
+                            type_params: m_type_params.clone(),
+                        });
+                    }
+                }
             }
         }
 
         // Pass 1.5: Resolve types (upgrade Struct to Enum if it's actually an Enum)
         let mut resolved_functions = self.functions.clone();
         for (_, sig) in resolved_functions.iter_mut() {
-            let span = sig.span;
-            for p in &mut sig.parameters {
-                self.resolve_type(p, span);
+            if sig.type_params.is_empty() {
+                let span = sig.span;
+                for p in &mut sig.parameters {
+                    self.resolve_type(p, span);
+                }
+                self.resolve_type(&mut sig.return_type, span);
             }
-            self.resolve_type(&mut sig.return_type, span);
         }
         self.functions = resolved_functions;
 
         let mut resolved_structs = self.structs.clone();
         for (_, sig) in resolved_structs.iter_mut() {
-            let span = sig.span;
-            for (_, ty) in sig.fields.iter_mut() {
-                self.resolve_type(ty, span);
+            if sig.type_params.is_empty() {
+                let span = sig.span;
+                for (_, ty) in sig.fields.iter_mut() {
+                    self.resolve_type(ty, span);
+                }
             }
         }
         self.structs = resolved_structs;
 
         let mut resolved_enums = self.enums.clone();
         for (_, sig) in resolved_enums.iter_mut() {
-            let span = sig.span;
-            for (_, ty) in sig.variants.iter_mut() {
-                for t in ty.iter_mut() {
-                    self.resolve_type(t, span);
+            if sig.type_params.is_empty() {
+                let span = sig.span;
+                for (_, ty) in sig.variants.iter_mut() {
+                    for t in ty.iter_mut() {
+                        self.resolve_type(t, span);
+                    }
                 }
             }
         }
@@ -393,7 +607,11 @@ impl SemanticAnalyzer {
             Stmt::Expr(expr) => {
                 self.analyze_expression(expr);
             }
-            Stmt::Function { name, parameters, return_type, is_async, body, span, doc_comment: _, attributes: _ } => {
+            Stmt::Function { name, type_params, parameters, return_type, is_async, body, span, doc_comment: _, attributes: _ } => {
+                if !type_params.is_empty() {
+                    return;
+                }
+                
                 let mut resolved_parameters = parameters.clone();
                 for param in &mut resolved_parameters {
                     let p_span = param.span;
@@ -425,6 +643,7 @@ impl SemanticAnalyzer {
                     return_type: resolved_return_type.clone(),
                     span: *span,
                     is_extern: false,
+                    type_params: type_params.clone(),
                 };
                 self.functions.insert(name.clone(), sig);
 
@@ -529,6 +748,35 @@ impl SemanticAnalyzer {
                     ));
                 }
             }
+            Stmt::Return(expr_opt, span) => {
+                let actual_ty = match expr_opt {
+                    Some(e) => self.analyze_expression(e),
+                    None => Type::Unit,
+                };
+
+                if let Some(expected_ty) = self.current_function_return_type.clone() {
+                    if !self.types_compatible(&expected_ty, &actual_ty) {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!(
+                                "Return type mismatch: expected `{:?}`, but found `{:?}`",
+                                expected_ty, actual_ty
+                            ),
+                            "MER0117".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            None,
+                        ));
+                    }
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        "'return' outside of function".to_string(),
+                        "MER0118".to_string(),
+                        *span,
+                        DiagnosticCategory::Semantic,
+                        None,
+                    ));
+                }
+            }
             Stmt::MacroDef { name, parameters, body, span } => {
                 self.macros.insert(name.clone(), MacroDefinition {
                     parameters: parameters.clone(),
@@ -540,6 +788,63 @@ impl SemanticAnalyzer {
             Stmt::Import(_, _) => {},
             Stmt::StructDef { .. } => {},
             Stmt::EnumDef { .. } => {},
+            Stmt::TraitDef { .. } => {
+                // Verified in Pass 1 and Impl blocks
+            }
+            Stmt::Impl { trait_name, target_name, type_params: _, methods, span } => {
+                // If it implements a trait, verify that all trait methods are present and match signatures!
+                if let Some(t_name) = trait_name {
+                    if let Some(trait_sig) = self.traits.get(t_name).cloned() {
+                        let target_methods = self.methods.get(target_name).cloned().unwrap_or_default();
+                        for (req_name, req_sig) in trait_sig.methods.iter() {
+                            if let Some(impl_sig) = target_methods.get(req_name) {
+                                // Check if signatures match (ignoring exact self type references for now since they are expanded)
+                                if req_sig.parameters.len() != impl_sig.parameters.len() {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        format!("Method '{}' in trait '{}' expects {} parameters, but implementation has {}", req_name, t_name, req_sig.parameters.len(), impl_sig.parameters.len()),
+                                        "MER0104".to_string(),
+                                        *span,
+                                        DiagnosticCategory::Semantic,
+                                        None,
+                                    ));
+                                }
+                                if req_sig.return_type != impl_sig.return_type {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        format!("Method '{}' return type mismatch. Expected {:?}, found {:?}", req_name, req_sig.return_type, impl_sig.return_type),
+                                        "MER0105".to_string(),
+                                        *span,
+                                        DiagnosticCategory::Semantic,
+                                        None,
+                                    ));
+                                }
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Missing implementation for trait method '{}'", req_name),
+                                    "MER0103".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Semantic,
+                                    None,
+                                ));
+                            }
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("Trait '{}' not found", t_name),
+                            "MER0106".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            None,
+                        ));
+                    }
+                }
+
+                let prev_impl = self.current_impl_target.clone();
+                self.current_impl_target = Some(target_name.clone());
+                for method in methods {
+                    self.analyze_statement(method);
+                }
+                self.current_impl_target = prev_impl;
+            },
         }
     }
 
@@ -718,8 +1023,12 @@ impl SemanticAnalyzer {
             Expr::Block(statements, _) => {
                 self.enter_scope();
                 let mut block_type = Type::Unit;
+                let mut diverges = false;
                 
                 for (i, stmt) in statements.iter().enumerate() {
+                    if matches!(stmt, Stmt::Return(_, _) | Stmt::Break(_) | Stmt::Continue(_)) {
+                        diverges = true;
+                    }
                     if i == statements.len() - 1 {
                         if let Stmt::Expr(e) = stmt {
                             block_type = self.analyze_expression(e);
@@ -732,7 +1041,11 @@ impl SemanticAnalyzer {
                 }
                 
                 self.exit_scope();
-                block_type
+                if diverges {
+                    Type::Unknown
+                } else {
+                    block_type
+                }
             }
             Expr::Assign { target, value, span } => {
                 let val_ty = self.analyze_expression(value);
@@ -798,7 +1111,64 @@ impl SemanticAnalyzer {
             }
             Expr::Call { callee, arguments, span } => {
                 if let Expr::Identifier(name, callee_span) = &**callee {
-                    if let Some(signature) = self.functions.get(name).cloned() {
+                    let mut actual_name = name.clone();
+                    
+                    if let Some(generic_stmt) = self.generic_functions.get(name).cloned() {
+                            if let Stmt::Function { ref type_params, ref parameters, .. } = generic_stmt {
+                                let mut inferred_args = vec![Type::Unknown; type_params.len()];
+                                let mut arg_types = Vec::new();
+                                for arg in arguments {
+                                    arg_types.push(self.analyze_expression(arg));
+                                }
+                                
+                                for (i, param) in parameters.iter().enumerate() {
+                                    if i < arg_types.len() {
+                                        if let Type::Struct(t_name) = &param.ty {
+                                            if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                                if inferred_args[pos] == Type::Unknown {
+                                                    inferred_args[pos] = arg_types[i].clone();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                println!("inferred_args for {}: {:?}", name, inferred_args);
+                                
+                                if inferred_args.iter().all(|t| *t != Type::Unknown) {
+                                    let type_args_strings: Vec<String> = inferred_args.iter().map(meridian_ast::type_to_string).collect();
+                                    let mono_name = format!("{}_{}", name, type_args_strings.join("_"));
+                                    self.resolved_names.insert(*callee_span, mono_name.clone());
+
+                                    if !self.functions.contains_key(&mono_name) {
+                                        let mut type_bindings = std::collections::HashMap::new();
+                                        for (j, param) in type_params.iter().enumerate() {
+                                            type_bindings.insert(param.clone(), inferred_args[j].clone());
+                                        }
+                                        
+                                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                                        if let Stmt::Function { name: mono_stmt_name, parameters: mono_params, return_type: mono_ret, span, .. } = &mut mono_stmt {
+                                            *mono_stmt_name = mono_name.clone();
+                                            let param_types = mono_params.iter().map(|p| p.ty.clone()).collect();
+                                            self.functions.insert(mono_name.clone(), FunctionSignature {
+                                                parameters: param_types,
+                                                return_type: mono_ret.clone(),
+                                                span: *span,
+                                                is_extern: false,
+                                                type_params: vec![],
+                                            });
+                                        }
+                                        self.monomorphized_stmts.push(mono_stmt);
+                                    }
+                                    actual_name = mono_name;
+                                    println!("actual_name changed to {}", actual_name);
+                                } else {
+                                    println!("Failed to infer all args for {}", name);
+                            }
+                        }
+                    }
+
+                    if let Some(signature) = self.functions.get(&actual_name).cloned() {
                         self.index.usages.insert(*callee_span, signature.span);
                         let unsafe_funcs = [
                             "process_output", "process_spawn", "tcp_bind", "tcp_accept", "tcp_read", "tcp_write",
@@ -1080,16 +1450,107 @@ impl SemanticAnalyzer {
             }
             Expr::MethodCall { object, method_name, arguments, span } => {
                 let obj_ty = self.analyze_expression(object);
+                let mut arg_types = Vec::new();
                 for arg in arguments {
-                    self.analyze_expression(arg);
+                    arg_types.push(self.analyze_expression(arg));
                 }
-                self.diagnostics.push(Diagnostic::new(
-                    format!("Method calls are not yet supported in Meridian (called '{}' on type {:?})", method_name, obj_ty),
-                    "MER0155".to_string(),
-                    *span,
-                    DiagnosticCategory::Semantic,
-                    Some("Methods using 'impl' blocks are planned for a future release.".to_string()),
-                ));
+
+                let obj_base_type_name = match &obj_ty {
+                    Type::Struct(n) => Some(n.clone()),
+                    Type::Reference(inner, _) => {
+                        if let Type::Struct(n) = &**inner {
+                            Some(n.clone())
+                        } else {
+                            None
+                        }
+                    },
+                    _ => None,
+                };
+
+                if let Some(type_name) = obj_base_type_name {
+                    // It could be a generic type like Box_Int, so we look it up!
+                    // Wait, pass 1 registered methods under the generic target name (e.g., 'Box') or the monomorphized name?
+                    // Methods were registered under `target_name` from the `impl Box<T>` -> target_name is `Box`.
+                    // But wait, `obj_ty` might be `Box_Int`.
+                    // So we strip everything after `_` if it's monomorphized?
+                    // Actually, if we monomorphize the `impl` block, it will re-register under `Box_Int`! Wait, we didn't implement monomorphization for `impl` blocks yet. Let's just lookup directly and see if `self.methods` contains it.
+                    let mut base_name = type_name.clone();
+                    if !self.methods.contains_key(&base_name) {
+                        if let Some(idx) = base_name.find('_') {
+                            base_name = base_name[..idx].to_string();
+                        }
+                    }
+
+                    if let Some(target_methods) = self.methods.get(&base_name).cloned() {
+                        if let Some(signature) = target_methods.get(method_name).cloned() {
+                            // Synthesize function call mangled name (which we know is `base_name_method_name`)
+                            let mangled_name = format!("{}_{}", base_name, method_name);
+                            // Store it in resolved_names so IR compiler knows what to call
+                            self.resolved_names.insert(*span, mangled_name);
+
+                            // We check the 'self' argument which is the first argument
+                            let expected_self_ty = &signature.parameters[0];
+                            if !self.types_compatible(expected_self_ty, &obj_ty) {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Type mismatch in 'self' argument: expected {:?}, found {:?}", expected_self_ty, obj_ty),
+                                    "MER0102".to_string(),
+                                    object.span(),
+                                    DiagnosticCategory::Type,
+                                    None,
+                                ));
+                            }
+
+                            // Check other arguments
+                            if arguments.len() + 1 != signature.parameters.len() {
+                                self.diagnostics.push(Diagnostic::new(
+                                    format!("Method '{}' expects {} arguments, but {} were provided", method_name, signature.parameters.len() - 1, arguments.len()),
+                                    "MER0110".to_string(),
+                                    *span,
+                                    DiagnosticCategory::Semantic,
+                                    None,
+                                ));
+                            } else {
+                                for (i, arg_ty) in arg_types.iter().enumerate() {
+                                    let expected_ty = &signature.parameters[i + 1];
+                                    if !self.types_compatible(expected_ty, arg_ty) {
+                                        self.diagnostics.push(Diagnostic::new(
+                                            format!("Type mismatch in argument {}: expected {:?}, found {:?}", i + 1, expected_ty, arg_ty),
+                                            "MER0102".to_string(),
+                                            arguments[i].span(),
+                                            DiagnosticCategory::Type,
+                                            None,
+                                        ));
+                                    }
+                                }
+                            }
+                            return signature.return_type;
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("No method named '{}' found for type '{}'", method_name, base_name),
+                                "MER0155".to_string(),
+                                *span,
+                                DiagnosticCategory::Semantic,
+                                None,
+                            ));
+                        }
+                    } else {
+                        self.diagnostics.push(Diagnostic::new(
+                            format!("No methods found for type '{}'", base_name),
+                            "MER0155".to_string(),
+                            *span,
+                            DiagnosticCategory::Semantic,
+                            None,
+                        ));
+                    }
+                } else {
+                    self.diagnostics.push(Diagnostic::new(
+                        format!("Cannot call methods on type {:?}", obj_ty),
+                        "MER0155".to_string(),
+                        *span,
+                        DiagnosticCategory::Semantic,
+                        None,
+                    ));
+                }
                 Type::Error
             }
             Expr::Error(_) => {
@@ -1119,7 +1580,11 @@ impl SemanticAnalyzer {
             }
             Expr::Int(_, _) => Type::Int,
             Expr::FieldAccess { object, field_name, span } => {
-                let obj_ty = self.analyze_expression(object);
+                let mut obj_ty = self.analyze_expression(object);
+                while let Type::Reference(inner, _) = obj_ty {
+                    obj_ty = *inner;
+                }
+                
                 if let Type::Struct(name) = &obj_ty {
                     if let Some(sig) = self.structs.get(name) {
                         if let Some(ty) = sig.fields.get(field_name) {
@@ -1145,7 +1610,11 @@ impl SemanticAnalyzer {
                 Type::Unknown
             }
             Expr::FieldAssign { object, field_name, value, span } => {
-                let obj_ty = self.analyze_expression(object);
+                let mut obj_ty = self.analyze_expression(object);
+                while let Type::Reference(inner, _) = obj_ty {
+                    obj_ty = *inner;
+                }
+                
                 let val_ty = self.analyze_expression(value);
                 if let Type::Struct(name) = &obj_ty {
                     if let Some(sig) = self.structs.get(name) {
@@ -1165,12 +1634,57 @@ impl SemanticAnalyzer {
                 }
                 Type::Unknown
             }
-            Expr::StructInit { name, fields, span } => {
-                if let Some(sig) = self.structs.get(name).cloned() {
-                    for (f_name, f_val) in fields {
-                        let val_ty = self.analyze_expression(f_val);
+            Expr::StructInit { name, type_args, fields, span } => {
+                let mut field_types = std::collections::HashMap::new();
+                for (f_name, f_val) in fields {
+                    field_types.insert(f_name.clone(), self.analyze_expression(f_val));
+                }
+
+                let actual_name = if !type_args.is_empty() {
+                    let mut dummy_ty = Type::Generic(name.clone(), type_args.clone());
+                    self.resolve_type(&mut dummy_ty, *span);
+                    if let Type::Struct(mono_name) = dummy_ty {
+                        mono_name
+                    } else {
+                        name.clone()
+                    }
+                } else if let Some(generic_stmt) = self.generic_structs.get(name).cloned() {
+                    if let Stmt::StructDef { type_params, fields: generic_fields, .. } = generic_stmt {
+                        let mut inferred_args = vec![Type::Unknown; type_params.len()];
+                        for g_field in generic_fields {
+                            if let Some(f_type) = field_types.get(&g_field.name) {
+                                if let Type::Struct(t_name) = &g_field.ty {
+                                    if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                        if inferred_args[pos] == Type::Unknown {
+                                            inferred_args[pos] = f_type.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if inferred_args.iter().all(|t| *t != Type::Unknown) {
+                            let mut dummy_ty = Type::Generic(name.clone(), inferred_args);
+                            self.resolve_type(&mut dummy_ty, *span);
+                            if let Type::Struct(mono_name) = dummy_ty {
+                                mono_name
+                            } else {
+                                name.clone()
+                            }
+                        } else {
+                            name.clone()
+                        }
+                    } else {
+                        name.clone()
+                    }
+                } else {
+                    name.clone()
+                };
+
+                if let Some(sig) = self.structs.get(&actual_name).cloned() {
+                    for (f_name, _) in fields {
+                        let val_ty = field_types.get(f_name).unwrap();
                         if let Some(expected_ty) = sig.fields.get(f_name) {
-                            if !self.types_compatible(expected_ty, &val_ty) {
+                            if !self.types_compatible(expected_ty, val_ty) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Type mismatch in field '{}': expected {:?}, found {:?}", f_name, expected_ty, val_ty),
                                     "MER0153".to_string(),
@@ -1189,10 +1703,10 @@ impl SemanticAnalyzer {
                             ));
                         }
                     }
-                    Type::Struct(name.clone())
+                    Type::Struct(actual_name)
                 } else {
                     self.diagnostics.push(Diagnostic::new(
-                        format!("Struct '{}' not found", name),
+                        format!("Struct '{}' not found", actual_name),
                         "MER0155".to_string(),
                         *span,
                         DiagnosticCategory::Semantic,
@@ -1260,8 +1774,51 @@ impl SemanticAnalyzer {
                 }
                 return_type
             }
-            Expr::EnumInit { enum_name, variant_name, values, span } => {
-                if let Some(enum_sig) = self.enums.get(enum_name).cloned() {
+            Expr::EnumInit { enum_name, type_args, variant_name, values, span } => {
+                let actual_name = if !type_args.is_empty() {
+                    let mut dummy_ty = Type::Generic(enum_name.clone(), type_args.clone());
+                    self.resolve_type(&mut dummy_ty, *span);
+                    if let Type::Enum(mono_name) = dummy_ty {
+                        mono_name
+                    } else {
+                        enum_name.clone()
+                    }
+                } else if let Some(generic_stmt) = self.generic_enums.get(enum_name).cloned() {
+                    if let Stmt::EnumDef { type_params, variants: generic_variants, .. } = generic_stmt {
+                        let mut inferred_args = vec![Type::Unknown; type_params.len()];
+                        if let Some(g_variant_types) = generic_variants.iter().find(|(n, _)| n == variant_name).map(|(_, t)| t) {
+                            for (i, v_type) in g_variant_types.iter().enumerate() {
+                                if i < values.len() {
+                                    let arg_ty = self.analyze_expression(&values[i]);
+                                    if let Type::Struct(t_name) = v_type {
+                                        if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                            if inferred_args[pos] == Type::Unknown {
+                                                inferred_args[pos] = arg_ty.clone();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if inferred_args.iter().all(|t| *t != Type::Unknown) {
+                            let mut dummy_ty = Type::Generic(enum_name.clone(), inferred_args);
+                            self.resolve_type(&mut dummy_ty, *span);
+                            if let Type::Enum(mono_name) = dummy_ty {
+                                mono_name
+                            } else {
+                                enum_name.clone()
+                            }
+                        } else {
+                            enum_name.clone()
+                        }
+                    } else {
+                        enum_name.clone()
+                    }
+                } else {
+                    enum_name.clone()
+                };
+
+                if let Some(enum_sig) = self.enums.get(&actual_name).cloned() {
                     if let Some(expected_types) = enum_sig.variants.get(variant_name) {
                         if values.len() != expected_types.len() {
                             self.diagnostics.push(Diagnostic::new(
@@ -1284,9 +1841,10 @@ impl SemanticAnalyzer {
                                 ));
                             }
                         }
+                        return Type::Enum(actual_name);
                     } else {
                         self.diagnostics.push(Diagnostic::new(
-                            format!("Variant '{}' not found in enum '{}'", variant_name, enum_name),
+                            format!("Variant '{}' not found in enum '{}'", variant_name, actual_name),
                             "MER0163".to_string(),
                             *span,
                             DiagnosticCategory::Semantic,

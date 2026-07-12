@@ -483,7 +483,10 @@ impl VM {
                             task.registers[base + dest] = Value::Struct(name.clone(), std::sync::Arc::new(std::sync::Mutex::new(map)));
                         }
                         Opcode::FieldAccess(dest, obj_reg, field_name) => {
-                            let obj_val = task.registers[base + obj_reg].clone();
+                            let mut obj_val = task.registers[base + obj_reg].clone();
+                            while let Value::Reference(ptr) = obj_val {
+                                obj_val = task.registers[ptr].clone();
+                            }
                             if let Value::Struct(_, map) = obj_val {
                                 let map = map.lock().unwrap();
                                 if let Some(val) = map.get(&field_name) {
@@ -503,7 +506,10 @@ impl VM {
                         }
                         Opcode::FieldAssign(obj_reg, field_name, val_reg) => {
                             let val = task.registers[base + val_reg].clone();
-                            let obj_val = task.registers[base + obj_reg].clone();
+                            let mut obj_val = task.registers[base + obj_reg].clone();
+                            while let Value::Reference(ptr) = obj_val {
+                                obj_val = task.registers[ptr].clone();
+                            }
                             if let Value::Struct(_, map) = obj_val {
                                 let mut map = map.lock().unwrap();
                                 map.insert(field_name.clone(), val);

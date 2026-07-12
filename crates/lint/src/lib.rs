@@ -119,6 +119,9 @@ impl Linter {
                 Stmt::ExternBlock { span, .. } => span.clone(),
                 Stmt::StructDef { span, .. } => span.clone(),
                 Stmt::EnumDef { span, .. } => span.clone(),
+                Stmt::TraitDef { span, .. } => span.clone(),
+                Stmt::Impl { span, .. } => span.clone(),
+                Stmt::Return(_, s) => s.clone(),
             };
 
             if found_terminator {
@@ -131,7 +134,7 @@ impl Linter {
                 ));
             }
             
-            if matches!(stmt, Stmt::Break(_) | Stmt::Continue(_)) {
+            if matches!(stmt, Stmt::Break(_) | Stmt::Continue(_) | Stmt::Return(_, _)) {
                 found_terminator = true;
             }
             self.lint_stmt(stmt);

@@ -120,13 +120,13 @@ pub fn solve(
                                 }
                             }
                             
-                            match registry::extract_artifact(name, best_version_str, expected_checksum) {
-                                Ok(extract_dir) => {
-                                    resolved_paths.insert(name.clone(), extract_dir);
+                            match crate::resolver::fetch::fetch_git(&reg_ver.source, Some(expected_checksum)) {
+                                Ok((checkout_dir, _)) => {
+                                    resolved_paths.insert(name.clone(), checkout_dir);
                                     locked_packages.push(LockedPackage {
                                         name: name.clone(),
                                         version: best_version_str.clone(),
-                                        source: format!("registry+{}", name),
+                                        source: format!("registry+{}#{}", name, expected_checksum),
                                         checksum: expected_checksum.clone(),
                                         dependencies: vec![],
                                     });
@@ -134,8 +134,8 @@ pub fn solve(
                                 Err(e) => {
                                     diagnostics.push(ResolverDiagnostic::FetchError {
                                         package: name.clone(),
-                                        source: "registry".to_string(),
-                                        error: format!("Failed to extract artifact: {}", e),
+                                        source: reg_ver.source.clone(),
+                                        error: format!("Failed to fetch git repo from registry metadata: {}", e),
                                     });
                                 }
                             }

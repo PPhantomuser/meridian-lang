@@ -1,0 +1,8 @@
+enum Pair<T, U> {
+    Tuple(T, U),
+}
+
+fn main() {
+    let a = Pair::Tuple(42, "hello");
+    print(a);
+}

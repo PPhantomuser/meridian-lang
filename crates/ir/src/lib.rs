@@ -80,6 +80,7 @@ pub struct Compiler {
     locals: HashMap<String, Register>,
     loop_contexts: Vec<LoopContext>,
     type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>,
+    resolved_names: HashMap<meridian_diagnostics::Span, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +90,7 @@ struct LoopContext {
 }
 
 impl Compiler {
-    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>) -> Self {
+    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>, resolved_names: HashMap<meridian_diagnostics::Span, String>) -> Self {
         Self {
             program_ir: ProgramIR::default(),
             current_chunk: Chunk::default(),
@@ -97,6 +98,7 @@ impl Compiler {
             locals: HashMap::new(),
             loop_contexts: Vec::new(),
             type_map,
+            resolved_names,
         }
     }
 
@@ -112,12 +114,22 @@ impl Compiler {
         for stmt in &program.statements {
             if let Stmt::MacroDef { name, parameters, body, .. } = stmt {
                 self.program_ir.macros.insert(name.clone(), (parameters.clone(), body.clone()));
-            } else if matches!(stmt, Stmt::Function { .. }) {
-                function_stmts.push(stmt);
+            } else if let Stmt::Function { name, .. } = stmt {
+                function_stmts.push((name.clone(), stmt));
             } else if let Stmt::ExternBlock { functions, .. } = stmt {
                 for func in functions {
                     if let Stmt::Function { name, parameters, .. } = func {
                         self.program_ir.extern_functions.insert(name.clone(), parameters.len());
+                    }
+                }
+            } else if let Stmt::TraitDef { .. } = stmt {
+                // Traits are purely compile-time
+            } else if let Stmt::Impl { target_name, methods, .. } = stmt {
+                for method in methods {
+                    if let Stmt::Function { name, .. } = method {
+                        // Mangling exactly as in semantic analyzer
+                        let mangled = format!("{}_{}", target_name, name);
+                        function_stmts.push((mangled, method));
                     }
                 }
             } else {
@@ -125,8 +137,8 @@ impl Compiler {
             }
         }
 
-        for stmt in function_stmts {
-            if let Stmt::Function { name, parameters, is_async, body, .. } = stmt {
+        for (mangled_name, stmt) in function_stmts {
+            if let Stmt::Function { parameters, is_async, body, .. } = stmt {
                 let saved_chunk = std::mem::take(&mut self.current_chunk);
                 let saved_next_reg = self.next_reg;
                 let saved_locals = std::mem::take(&mut self.locals);
@@ -141,7 +153,7 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::Return(ret_reg));
 
                 let compiled_fn = std::mem::take(&mut self.current_chunk);
-                self.program_ir.functions.insert(name.clone(), (compiled_fn, *is_async, parameters.len()));
+                self.program_ir.functions.insert(mangled_name, (compiled_fn, *is_async, parameters.len()));
 
                 self.current_chunk = saved_chunk;
                 self.next_reg = saved_next_reg;
@@ -177,6 +189,9 @@ impl Compiler {
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::TraitDef { .. } => {
+                // Ignore, purely compile time
+            }
             Stmt::Let { name, initializer, .. } => {
                 let val_reg = self.compile_expr(initializer);
                 self.locals.insert(name.clone(), val_reg);
@@ -280,7 +295,18 @@ impl Compiler {
                     self.current_chunk.instructions.push(Opcode::Jump(start));
                 }
             }
-            Stmt::Function { .. } | Stmt::Import(_, _) | Stmt::ExternBlock { .. } | Stmt::StructDef { .. } | Stmt::EnumDef { .. } => {}
+            Stmt::Return(expr_opt, _) => {
+                let ret_reg = if let Some(expr) = expr_opt {
+                    self.compile_expr(expr)
+                } else {
+                    let idx = self.current_chunk.add_constant(ConstValue::Number(0.0));
+                    let reg = self.alloc_reg();
+                    self.current_chunk.instructions.push(Opcode::LoadConst(reg, idx));
+                    reg
+                };
+                self.current_chunk.instructions.push(Opcode::Return(ret_reg));
+            }
+            Stmt::Function { .. } | Stmt::Import(_, _) | Stmt::ExternBlock { .. } | Stmt::StructDef { .. } | Stmt::EnumDef { .. } | Stmt::Impl { .. } => {}
             Stmt::MacroDef { name, parameters, body, .. } => {
                 self.program_ir.macros.insert(name.clone(), (parameters.clone(), body.clone()));
             }
@@ -335,8 +361,10 @@ impl Compiler {
                 self.current_chunk.instructions.push(op);
                 dest
             }
-            Expr::Call { callee, arguments, .. } => {
-                if let Expr::Identifier(name, _) = &**callee {
+            Expr::Call { callee, arguments, span } => {
+                if let Expr::Identifier(name, callee_span) = &**callee {
+                    let actual_name = self.resolved_names.get(callee_span).unwrap_or(name).clone();
+
                     let mut arg_regs = Vec::new();
                     for arg in arguments {
                         arg_regs.push(self.compile_expr(arg));
@@ -349,14 +377,32 @@ impl Compiler {
                     }
                     
                     let dest = self.alloc_reg();
-                    self.current_chunk.instructions.push(Opcode::Call(dest, name.clone(), arg_start, arguments.len()));
+                    self.current_chunk.instructions.push(Opcode::Call(dest, actual_name, arg_start, arguments.len()));
                     dest
                 } else {
                     unimplemented!("Calls only supported on identifiers");
                 }
             }
-            Expr::MethodCall { .. } => {
-                unimplemented!("Method call IR generation")
+            Expr::MethodCall { object, method_name, arguments, span } => {
+                let actual_name = self.resolved_names.get(span)
+                    .cloned()
+                    .unwrap_or_else(|| panic!("Method call name not resolved for '{}'", method_name));
+
+                let obj_reg = self.compile_expr(object);
+                let mut arg_regs = vec![obj_reg];
+                for arg in arguments {
+                    arg_regs.push(self.compile_expr(arg));
+                }
+
+                let arg_start = self.alloc_reg();
+                for (i, reg) in arg_regs.iter().enumerate() {
+                    if i > 0 { self.alloc_reg(); }
+                    self.current_chunk.instructions.push(Opcode::Move(arg_start + i, *reg));
+                }
+
+                let dest = self.alloc_reg();
+                self.current_chunk.instructions.push(Opcode::Call(dest, actual_name, arg_start, arg_regs.len()));
+                dest
             }
             Expr::Int(n, _) => {
                 let dest = self.alloc_reg();
@@ -364,7 +410,8 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::LoadConst(dest, const_idx));
                 dest
             }
-            Expr::EnumInit { enum_name, variant_name, values, .. } => {
+            Expr::EnumInit { enum_name, variant_name, values, span, .. } => {
+                let actual_name = self.resolved_names.get(span).unwrap_or(enum_name).clone();
                 let mut val_regs = Vec::new();
                 for v in values {
                     val_regs.push(self.compile_expr(v));
@@ -377,7 +424,7 @@ impl Compiler {
                 }
                 
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, enum_name.clone(), variant_name.clone(), start_reg, val_regs.len()));
+                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, actual_name, variant_name.clone(), start_reg, val_regs.len()));
                 dest
             }
             Expr::Match { value, arms, .. } => {
@@ -489,7 +536,8 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::ArrayIndex(dest, obj_reg, index_reg));
                 dest
             }
-            Expr::StructInit { name, fields, .. } => {
+            Expr::StructInit { name, fields, span, .. } => {
+                let actual_name = self.resolved_names.get(span).unwrap_or(name).clone();
                 let mut sorted_fields = fields.clone();
                 sorted_fields.sort_by(|a, b| a.0.cmp(&b.0));
                 
@@ -507,7 +555,7 @@ impl Compiler {
                 }
                 
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeStruct(dest, name.clone(), field_names, first_field_reg));
+                self.current_chunk.instructions.push(Opcode::MakeStruct(dest, actual_name, field_names, first_field_reg));
                 dest
             }
             Expr::ArrayInit { elements, .. } => {

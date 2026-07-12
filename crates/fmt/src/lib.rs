@@ -104,6 +104,15 @@ impl Formatter {
                 self.push_indent();
                 self.output.push_str("continue;");
             }
+            Stmt::Return(expr_opt, _) => {
+                self.push_indent();
+                self.output.push_str("return");
+                if let Some(expr) = expr_opt {
+                    self.output.push(' ');
+                    self.format_expr(expr);
+                }
+                self.output.push(';');
+            }
             Stmt::MacroDef { name, parameters, body, .. } => {
                 self.push_indent();
                 self.output.push_str(&format!("macro {}(", name));
@@ -161,6 +170,44 @@ impl Formatter {
                         self.output.push_str(")");
                     }
                     self.output.push_str(",\n");
+                }
+                self.indent_level -= 1;
+                self.push_indent();
+                self.output.push_str("}");
+            }
+            Stmt::TraitDef { name, type_params, methods, .. } => {
+                self.push_indent();
+                self.output.push_str("trait ");
+                self.output.push_str(name);
+                if !type_params.is_empty() {
+                    self.output.push_str(&format!("<{}>", type_params.join(", ")));
+                }
+                self.output.push_str(" {\n");
+                self.indent_level += 1;
+                for (i, method) in methods.iter().enumerate() {
+                    if i > 0 { self.output.push_str("\n"); }
+                    self.format_stmt(method);
+                    self.output.push_str("\n");
+                }
+                self.indent_level -= 1;
+                self.push_indent();
+                self.output.push_str("}");
+            }
+            Stmt::Impl { trait_name, target_name, type_params, methods, .. } => {
+                self.push_indent();
+                self.output.push_str("impl");
+                if !type_params.is_empty() {
+                    self.output.push_str(&format!("<{}>", type_params.join(", ")));
+                }
+                if let Some(t_name) = trait_name {
+                    self.output.push_str(&format!(" {} for", t_name));
+                }
+                self.output.push_str(&format!(" {} {{\n", target_name));
+                self.indent_level += 1;
+                for (i, method) in methods.iter().enumerate() {
+                    if i > 0 { self.output.push_str("\n"); }
+                    self.format_stmt(method);
+                    self.output.push_str("\n");
                 }
                 self.indent_level -= 1;
                 self.push_indent();

@@ -1,0 +1,24 @@
+fn early_exit(x: Number) -> Number {
+    if x > 5.0 {
+        return 100.0;
+    }
+    return 0.0;
+}
+
+fn void_exit(x: Number) {
+    if x < 0.0 {
+        return;
+    }
+    print x;
+}
+
+fn main() {
+    let a = early_exit(10.0);
+    print a;
+    
+    let b = early_exit(2.0);
+    print b;
+
+    void_exit(0.0 - 5.0); // Prints nothing
+    void_exit(5.0); // Prints 5
+}

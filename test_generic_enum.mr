@@ -1,0 +1,11 @@
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+fn main() {
+    let a: Result<Int, String> = Result<Int, String>::Ok(42);
+    let b: Result<String, Int> = Result<String, Int>::Err(42);
+    print(a);
+    print(b);
+}

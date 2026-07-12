@@ -1,0 +1,26 @@
+struct Counter {
+    count: Int,
+}
+
+fn make_counter() -> Counter {
+    return Counter { count: 0 };
+}
+
+impl Counter {
+    fn increment(&mut self, amount: Int) -> Int {
+        self.count = self.count + amount;
+        return 0;
+    }
+
+    fn get_count(&self) -> Int {
+        return self.count;
+    }
+}
+
+fn main() {
+    let mut c = make_counter();
+    let mut c_ref = &mut c;
+    c_ref.increment(5);
+    c_ref.increment(10);
+    print(c_ref.get_count());
+}

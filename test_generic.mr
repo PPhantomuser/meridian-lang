@@ -1,0 +1,8 @@
+struct Box<T> {
+    value: T
+}
+
+fn main() {
+    let b = Box { value: 42 };
+    print(b.value);
+}
