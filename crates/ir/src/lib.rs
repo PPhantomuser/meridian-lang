@@ -163,7 +163,7 @@ impl Compiler {
         }
 
         for stmt in &main_stmts {
-            self.compile_stmt(*stmt);
+            self.compile_stmt(stmt);
         }
 
         // A10: Auto-call main if explicitly defined, but only if not called explicitly
@@ -361,7 +361,7 @@ impl Compiler {
                 self.current_chunk.instructions.push(op);
                 dest
             }
-            Expr::Call { callee, arguments, span } => {
+            Expr::Call { callee, arguments, span: _ } => {
                 if let Expr::Identifier(name, callee_span) = &**callee {
                     let actual_name = self.resolved_names.get(callee_span).unwrap_or(name).clone();
 

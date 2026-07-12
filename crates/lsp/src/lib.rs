@@ -13,6 +13,12 @@ pub struct Workspace {
     semantics: HashMap<String, SemanticAnalyzer>,
 }
 
+impl Default for Workspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Workspace {
     pub fn new() -> Self {
         Self {

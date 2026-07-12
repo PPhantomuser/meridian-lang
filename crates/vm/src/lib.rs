@@ -123,6 +123,7 @@ struct Task {
 pub struct VM {
     functions: HashMap<String, (Chunk, bool, usize)>,
     extern_functions: HashMap<String, usize>,
+    #[allow(clippy::type_complexity)]
     native_functions: Vec<Box<dyn Fn(&[Value]) -> Value>>,
     global_env: HashMap<String, Value>,
     
@@ -131,6 +132,12 @@ pub struct VM {
     next_task_id: usize,
     
     pub coverage: HashMap<String, HashSet<usize>>,
+}
+
+impl Default for VM {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VM {
@@ -147,6 +154,7 @@ impl VM {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn register_native_function(&mut self, name: &str, func: Box<dyn Fn(&[Value]) -> Value>) {
         let idx = self.native_functions.len();
         self.native_functions.push(func);
@@ -238,7 +246,7 @@ impl VM {
                     // Code coverage tracking
                     self.coverage
                         .entry(frame.function_name.clone())
-                        .or_insert_with(HashSet::new)
+                        .or_default()
                         .insert(frame.ip);
 
                     let instruction = frame.chunk.instructions[frame.ip].clone();

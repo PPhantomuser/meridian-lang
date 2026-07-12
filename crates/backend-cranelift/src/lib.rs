@@ -24,6 +24,12 @@ pub struct JITCompiler {
     print_i64_func_id: FuncId,
 }
 
+impl Default for JITCompiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JITCompiler {
     pub fn new() -> Self {
         let mut flag_builder = settings::builder();

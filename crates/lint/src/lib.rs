@@ -28,7 +28,7 @@ impl Linter {
         // Unused variables check via SemanticIndex
         let mut used_spans = HashSet::new();
         for def_span in semantic.index.usages.values() {
-            used_spans.insert(def_span.clone());
+            used_spans.insert(*def_span);
         }
 
         for (name, def_span) in &semantic.index.definitions {
@@ -40,7 +40,7 @@ impl Linter {
                 self.diagnostics.push(Diagnostic::new(
                     format!("Identifier '{}' is declared but never used", name),
                     "MER0301".to_string(),
-                    def_span.clone(),
+                    *def_span,
                     DiagnosticCategory::Lint,
                     Some(format!("If this is intentional, prefix it with an underscore: _{}", name)),
                 ));
@@ -48,6 +48,7 @@ impl Linter {
         }
     }
 
+    #[allow(clippy::collapsible_match)]
     fn lint_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Function { body, .. } => {
@@ -56,7 +57,7 @@ impl Linter {
                         self.diagnostics.push(Diagnostic::new(
                             "Empty function body".to_string(),
                             "MER0302".to_string(),
-                            span.clone(),
+                            *span,
                             DiagnosticCategory::Lint,
                             Some("Consider adding an implementation or removing the function if unused.".to_string()),
                         ));
@@ -70,7 +71,7 @@ impl Linter {
                         self.diagnostics.push(Diagnostic::new(
                             "Empty while loop body".to_string(),
                             "MER0303".to_string(),
-                            span.clone(),
+                            *span,
                             DiagnosticCategory::Lint,
                             Some("Consider adding logic or removing the loop.".to_string()),
                         ));
@@ -84,7 +85,7 @@ impl Linter {
                         self.diagnostics.push(Diagnostic::new(
                             "Empty for loop body".to_string(),
                             "MER0304".to_string(),
-                            span.clone(),
+                            *span,
                             DiagnosticCategory::Lint,
                             Some("Consider adding logic or removing the loop.".to_string()),
                         ));
@@ -101,27 +102,27 @@ impl Linter {
         let mut found_terminator = false;
         for stmt in stmts {
             let span = match stmt {
-                Stmt::Import(_, s) => s.clone(),
-                Stmt::Let { span, .. } => span.clone(),
+                Stmt::Import(_, s) => *s,
+                Stmt::Let { span, .. } => *span,
                 Stmt::Expr(e) => {
                     // Expr has its own span, but we need to fetch it
                     // For now, we can just use a dummy span or implement a span() method on Expr.
                     // Let's implement a helper in Linter
                     self.expr_span(e)
                 },
-                Stmt::Print(_, s) => s.clone(),
-                Stmt::Function { span, .. } => span.clone(),
-                Stmt::While { span, .. } => span.clone(),
-                Stmt::For { span, .. } => span.clone(),
-                Stmt::Break(s) => s.clone(),
-                Stmt::Continue(s) => s.clone(),
-                Stmt::MacroDef { span, .. } => span.clone(),
-                Stmt::ExternBlock { span, .. } => span.clone(),
-                Stmt::StructDef { span, .. } => span.clone(),
-                Stmt::EnumDef { span, .. } => span.clone(),
-                Stmt::TraitDef { span, .. } => span.clone(),
-                Stmt::Impl { span, .. } => span.clone(),
-                Stmt::Return(_, s) => s.clone(),
+                Stmt::Print(_, s) => *s,
+                Stmt::Function { span, .. } => *span,
+                Stmt::While { span, .. } => *span,
+                Stmt::For { span, .. } => *span,
+                Stmt::Break(s) => *s,
+                Stmt::Continue(s) => *s,
+                Stmt::MacroDef { span, .. } => *span,
+                Stmt::ExternBlock { span, .. } => *span,
+                Stmt::StructDef { span, .. } => *span,
+                Stmt::EnumDef { span, .. } => *span,
+                Stmt::TraitDef { span, .. } => *span,
+                Stmt::Impl { span, .. } => *span,
+                Stmt::Return(_, s) => *s,
             };
 
             if found_terminator {
@@ -143,35 +144,35 @@ impl Linter {
 
     fn expr_span(&self, expr: &Expr) -> Span {
         match expr {
-            Expr::Number(_, s) => s.clone(),
-            Expr::String(_, s) => s.clone(),
-            Expr::Bool(_, s) => s.clone(),
-            Expr::Identifier(_, s) => s.clone(),
-            Expr::Binary { span, .. } => span.clone(),
-            Expr::Assign { span, .. } => span.clone(),
-            Expr::Call { span, .. } => span.clone(),
-            Expr::MethodCall { span, .. } => span.clone(),
-            Expr::Index { span, .. } => span.clone(),
-            Expr::If { span, .. } => span.clone(),
-            Expr::Block(_, s) => s.clone(),
-            Expr::Group(_, s) => s.clone(),
-            Expr::Range { span, .. } => span.clone(),
-            Expr::Borrow { span, .. } => span.clone(),
-            Expr::Dereference { span, .. } => span.clone(),
-            Expr::AsyncBlock { span, .. } => span.clone(),
-            Expr::Await { span, .. } => span.clone(),
-            Expr::Spawn { span, .. } => span.clone(),
-            Expr::UnsafeBlock { span, .. } => span.clone(),
-            Expr::Error(span) => span.clone(),
-            Expr::MacroCall { span, .. } => span.clone(),
-            Expr::StructInit { span, .. } => span.clone(),
-            Expr::FieldAccess { span, .. } => span.clone(),
-            Expr::FieldAssign { span, .. } => span.clone(),
-            Expr::ArrayInit { span, .. } => span.clone(),
-            Expr::Int(_, span) => span.clone(),
-            Expr::Match { span, .. } => span.clone(),
-            Expr::EnumInit { span, .. } => span.clone(),
-            Expr::Try(_, span) => span.clone(),
+            Expr::Number(_, s) => *s,
+            Expr::String(_, s) => *s,
+            Expr::Bool(_, s) => *s,
+            Expr::Identifier(_, s) => *s,
+            Expr::Binary { span, .. } => *span,
+            Expr::Assign { span, .. } => *span,
+            Expr::Call { span, .. } => *span,
+            Expr::MethodCall { span, .. } => *span,
+            Expr::Index { span, .. } => *span,
+            Expr::If { span, .. } => *span,
+            Expr::Block(_, s) => *s,
+            Expr::Group(_, s) => *s,
+            Expr::Range { span, .. } => *span,
+            Expr::Borrow { span, .. } => *span,
+            Expr::Dereference { span, .. } => *span,
+            Expr::AsyncBlock { span, .. } => *span,
+            Expr::Await { span, .. } => *span,
+            Expr::Spawn { span, .. } => *span,
+            Expr::UnsafeBlock { span, .. } => *span,
+            Expr::Error(span) => *span,
+            Expr::MacroCall { span, .. } => *span,
+            Expr::StructInit { span, .. } => *span,
+            Expr::FieldAccess { span, .. } => *span,
+            Expr::FieldAssign { span, .. } => *span,
+            Expr::ArrayInit { span, .. } => *span,
+            Expr::Int(_, span) => *span,
+            Expr::Match { span, .. } => *span,
+            Expr::EnumInit { span, .. } => *span,
+            Expr::Try(_, span) => *span,
         }
     }
 

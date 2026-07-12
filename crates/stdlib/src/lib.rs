@@ -1,3 +1,4 @@
+#![allow(clippy::needless_return)]
 use meridian_vm::{Value, VM};
 use std::fs;
 
@@ -474,7 +475,7 @@ pub fn register_all(vm: &mut VM) {
                     if let Some(lib) = guard.downcast_ref::<libloading::Library>() {
                         unsafe {
                             let sym_c = std::ffi::CString::new(sym.as_bytes()).unwrap();
-                            match lib.get::<libloading::Symbol<unsafe extern "C" fn()>>(&sym_c.as_bytes_with_nul()) {
+                            match lib.get::<libloading::Symbol<unsafe extern "C" fn()>>(sym_c.as_bytes_with_nul()) {
                                 Ok(symbol) => {
                                     let ptr = symbol.into_raw().into_raw();
                                     let func = FFIFunction {

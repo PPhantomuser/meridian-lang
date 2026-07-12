@@ -460,10 +460,10 @@ impl<'a> Parser<'a> {
             // Wait, Meridian might not support empty bodies yet, let's just let it parse with a block for now.
             // But we will allow it to not have a block by parsing it manually here!
             self.advance(); // consume 'fn'
-            let mut method_name_str = String::new();
-            if let TokenKind::Identifier(m_name) = &self.current_token.kind {
-                method_name_str = m_name.clone();
+            let method_name_str = if let TokenKind::Identifier(m_name) = &self.current_token.kind {
+                let name = m_name.clone();
                 self.advance();
+                name
             } else {
                 self.diagnostics.push(Diagnostic::new(
                     "Expected method name".to_string(),
@@ -473,7 +473,7 @@ impl<'a> Parser<'a> {
                     None,
                 ));
                 return None;
-            }
+            };
 
             if self.current_token.kind != TokenKind::LParen {
                 return None;
@@ -1313,10 +1313,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // consume =
 
-        let initializer = self.parse_expression(0).unwrap_or_else(|| {
-            // Recover from missing expression
-            Expr::Error(self.current_token.span)
-        });
+        let initializer = self.parse_expression(0).unwrap_or(Expr::Error(self.current_token.span));
 
         let mut end_span = initializer.span();
         if self.current_token.kind == TokenKind::Semicolon {
@@ -1566,7 +1563,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                 };
-                return Some(ty);
+                Some(ty)
             }
             TokenKind::LParen => {
                 self.advance(); // consume (
@@ -1737,8 +1734,7 @@ impl<'a> Parser<'a> {
                 expr
             }
             TokenKind::Match => {
-                let expr = self.parse_match_expression()?;
-                expr
+                self.parse_match_expression()?
             }
             TokenKind::String(ref s) => {
                 let expr = Expr::String(s.clone(), self.current_token.span);

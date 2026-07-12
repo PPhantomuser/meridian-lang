@@ -56,7 +56,9 @@ struct EnumSignature {
 #[derive(Clone)]
 struct TraitSignature {
     methods: HashMap<String, FunctionSignature>,
+    #[allow(dead_code)]
     span: Span,
+    #[allow(dead_code)]
     type_params: Vec<String>,
 }
 
@@ -85,6 +87,12 @@ pub struct SemanticAnalyzer {
     pub type_map: std::collections::HashMap<Span, Type>,
     pub resolved_names: std::collections::HashMap<Span, String>,
     pub capabilities: std::collections::HashSet<String>,
+}
+
+impl Default for SemanticAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SemanticAnalyzer {
@@ -183,6 +191,7 @@ impl SemanticAnalyzer {
         }
     }
 
+    #[allow(clippy::collapsible_match)]
     fn resolve_type(&mut self, ty: &mut Type, span: Span) {
         if let Type::Struct(name) = ty {
             if name == "Self" {
@@ -321,6 +330,7 @@ impl SemanticAnalyzer {
         self.scopes.pop();
     }
 
+    #[allow(clippy::map_entry)]
     fn declare_variable(&mut self, name: String, ty: Type, mutable: bool, span: Span) {
         if let Some(scope) = self.scopes.last_mut() {
             if scope.contains_key(&name) {
@@ -490,7 +500,7 @@ impl SemanticAnalyzer {
                 });
                 self.index.definitions.insert(name.clone(), *span);
             } else if let Stmt::Impl { trait_name: _, target_name, type_params: _, methods, span: _ } = stmt {
-                let target_methods = self.methods.entry(target_name.clone()).or_insert_with(HashMap::new);
+                let target_methods = self.methods.entry(target_name.clone()).or_default();
                 for method in methods {
                     if let Stmt::Function { name: m_name, type_params: m_type_params, parameters: m_parameters, return_type: m_return_type, span: m_span, .. } = method {
                         let mut param_types = Vec::new();
@@ -854,6 +864,7 @@ impl SemanticAnalyzer {
         ty
     }
 
+    #[allow(clippy::collapsible_match)]
     fn analyze_expression_inner(&mut self, expr: &Expr) -> Type {
         match expr {
             Expr::Number(_, _) => Type::Number,
@@ -988,7 +999,7 @@ impl SemanticAnalyzer {
                 let inner_ty = self.analyze_expression(expr);
                 if let Type::Result(ok, err) = inner_ty {
                     if let Some(Type::Result(_, func_err)) = &self.current_function_return_type {
-                        if !self.types_compatible(&func_err, &err) {
+                        if !self.types_compatible(func_err, &err) {
                             self.diagnostics.push(Diagnostic::new(
                                 format!("Try operator `?` error type mismatch: function returns `Result<_, {:?}>` but expression gives `Result<_, {:?}>`", func_err, err),
                                 "MER0161".to_string(),
@@ -1228,8 +1239,7 @@ impl SemanticAnalyzer {
                             ));
                         }
                         
-                        if self.macro_expansion_depth > 0 {
-                            if unsafe_funcs.contains(&name.as_str()) {
+                        if self.macro_expansion_depth > 0 && unsafe_funcs.contains(&name.as_str()) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Macro expansion resulted in a call to unsafe system function '{}'", name),
                                     "MER0155".to_string(),
@@ -1237,7 +1247,6 @@ impl SemanticAnalyzer {
                                     DiagnosticCategory::Semantic,
                                     Some("Macros are sandboxed and cannot invoke file/net I/O".to_string()),
                                 ));
-                            }
                         }
                         if arguments.len() != signature.parameters.len() {
                             self.diagnostics.push(Diagnostic::new(
@@ -2041,7 +2050,7 @@ impl SemanticAnalyzer {
                     }
                 }
                 
-                if binding_names.len() > 0 && payload_tys.len() != binding_names.len() && !matches!(ty, Type::Unknown | Type::Error) {
+                if !binding_names.is_empty() && payload_tys.len() != binding_names.len() && !matches!(ty, Type::Unknown | Type::Error) {
                     self.diagnostics.push(Diagnostic::new(
                         format!("Pattern expected {} bindings, found {}", payload_tys.len(), binding_names.len()),
                         "MER0162".to_string(),

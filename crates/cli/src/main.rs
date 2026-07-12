@@ -10,7 +10,6 @@ use std::collections::{HashSet, HashMap};
 use std::path::{Path, PathBuf};
 use meridian_diagnostics::{Diagnostic, DiagnosticCategory, Span};
 use meridian_ast::{Program, Stmt};
-use meridian_lsp;
 
 mod resolver;
 
@@ -288,7 +287,7 @@ fn main() {
                     println!("Fetched dependencies successfully.");
                 }
                 PkgCommands::Search { name } => {
-                    if let Some(index) = resolver::registry::get_package_index(&name) {
+                    if let Some(index) = resolver::registry::get_package_index(name) {
                         println!("Package: {}", index.name);
                         println!("Available Versions:");
                         for v in index.versions {
@@ -325,7 +324,7 @@ fn main() {
                     }
                     
                     let deps_opt = if deps.is_empty() { None } else { Some(deps) };
-                    match resolver::registry::generate_publish_payload(&pkg_name, &version, &source, &commit, deps_opt) {
+                    match resolver::registry::generate_publish_payload(&pkg_name, &version, source, commit, deps_opt) {
                         Ok(json) => {
                             println!("Successfully generated registry metadata for {} v{}!\n", pkg_name, version);
                             println!("To publish your package, please submit a Pull Request to:");
@@ -644,7 +643,7 @@ int main(int argc, char** argv) {
                                 if !path.ends_with("target") && !path.ends_with(".git") {
                                     dirs.push(path);
                                 }
-                            } else if path.extension().map_or(false, |ext| ext == "merid" || ext == "mr") {
+                            } else if path.extension().is_some_and(|ext| ext == "merid" || ext == "mr") {
                                 if let Some(prog) = load_module(&path, &mut visited, &mut diagnostics, None) {
                                     test_programs.push(prog);
                                 }
@@ -701,7 +700,7 @@ int main(int argc, char** argv) {
                 let compiler = Compiler::new(semantic.type_map, semantic.resolved_names);
                 let program_ir = compiler.compile(&program);
 
-                for (_, (chunk, _, _)) in &program_ir.functions {
+                for (chunk, _, _) in program_ir.functions.values() {
                     total_ir_instructions += chunk.instructions.len();
                 }
 

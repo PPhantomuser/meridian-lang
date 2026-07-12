@@ -342,7 +342,7 @@ impl Expr {
             }
             Expr::Binary { left, operator, right, span } => Expr::Binary {
                 left: Box::new(left.substitute(args)),
-                operator: operator.clone(),
+                operator: *operator,
                 right: Box::new(right.substitute(args)),
                 span: *span,
             },

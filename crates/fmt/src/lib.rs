@@ -5,6 +5,12 @@ pub struct Formatter {
     output: String,
 }
 
+impl Default for Formatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Formatter {
     pub fn new() -> Self {
         Self {
@@ -79,21 +85,21 @@ impl Formatter {
                 }
                 self.output.push_str(") -> ");
                 self.format_type(return_type);
-                self.output.push_str(" ");
+                self.output.push(' ');
                 self.format_expr(body);
             }
             Stmt::While { condition, body, .. } => {
                 self.push_indent();
                 self.output.push_str("while ");
                 self.format_expr(condition);
-                self.output.push_str(" ");
+                self.output.push(' ');
                 self.format_expr(body);
             }
             Stmt::For { iterator, iterable, body, .. } => {
                 self.push_indent();
                 self.output.push_str(&format!("for {} in ", iterator));
                 self.format_expr(iterable);
-                self.output.push_str(" ");
+                self.output.push(' ');
                 self.format_expr(body);
             }
             Stmt::Break(_) => {
@@ -152,7 +158,7 @@ impl Formatter {
                 }
                 self.indent_level -= 1;
                 self.push_indent();
-                self.output.push_str("}");
+                self.output.push('}');
             }
             Stmt::EnumDef { name, variants, .. } => {
                 self.push_indent();
@@ -162,18 +168,18 @@ impl Formatter {
                     self.push_indent();
                     self.output.push_str(variant_name);
                     if !variant_types.is_empty() {
-                        self.output.push_str("(");
+                        self.output.push('(');
                         for (i, ty) in variant_types.iter().enumerate() {
                             if i > 0 { self.output.push_str(", "); }
                             self.format_type(ty);
                         }
-                        self.output.push_str(")");
+                        self.output.push(')');
                     }
                     self.output.push_str(",\n");
                 }
                 self.indent_level -= 1;
                 self.push_indent();
-                self.output.push_str("}");
+                self.output.push('}');
             }
             Stmt::TraitDef { name, type_params, methods, .. } => {
                 self.push_indent();
@@ -185,13 +191,13 @@ impl Formatter {
                 self.output.push_str(" {\n");
                 self.indent_level += 1;
                 for (i, method) in methods.iter().enumerate() {
-                    if i > 0 { self.output.push_str("\n"); }
+                    if i > 0 { self.output.push('\n'); }
                     self.format_stmt(method);
-                    self.output.push_str("\n");
+                    self.output.push('\n');
                 }
                 self.indent_level -= 1;
                 self.push_indent();
-                self.output.push_str("}");
+                self.output.push('}');
             }
             Stmt::Impl { trait_name, target_name, type_params, methods, .. } => {
                 self.push_indent();
@@ -205,13 +211,13 @@ impl Formatter {
                 self.output.push_str(&format!(" {} {{\n", target_name));
                 self.indent_level += 1;
                 for (i, method) in methods.iter().enumerate() {
-                    if i > 0 { self.output.push_str("\n"); }
+                    if i > 0 { self.output.push('\n'); }
                     self.format_stmt(method);
-                    self.output.push_str("\n");
+                    self.output.push('\n');
                 }
                 self.indent_level -= 1;
                 self.push_indent();
-                self.output.push_str("}");
+                self.output.push('}');
             }
         }
     }
@@ -389,7 +395,7 @@ impl Formatter {
             Expr::If { condition, then_branch, else_branch, .. } => {
                 self.output.push_str("if ");
                 self.format_expr(condition);
-                self.output.push_str(" ");
+                self.output.push(' ');
                 self.format_expr(then_branch);
                 if let Some(else_branch) = else_branch {
                     self.output.push_str(" else ");
@@ -498,12 +504,12 @@ impl Formatter {
                 self.output.push_str("::");
                 self.output.push_str(variant_name);
                 if !values.is_empty() {
-                    self.output.push_str("(");
+                    self.output.push('(');
                     for (i, v) in values.iter().enumerate() {
                         if i > 0 { self.output.push_str(", "); }
                         self.format_expr(v);
                     }
-                    self.output.push_str(")");
+                    self.output.push(')');
                 }
             }
             Expr::Try(expr, _) => {
@@ -522,12 +528,12 @@ impl Formatter {
                 self.output.push_str("::");
                 self.output.push_str(variant_name);
                 if !binding_names.is_empty() {
-                    self.output.push_str("(");
+                    self.output.push('(');
                     for (i, b) in binding_names.iter().enumerate() {
                         if i > 0 { self.output.push_str(", "); }
                         self.output.push_str(b);
                     }
-                    self.output.push_str(")");
+                    self.output.push(')');
                 }
             }
             meridian_ast::Pattern::Number(n, _) => self.output.push_str(&n.to_string()),

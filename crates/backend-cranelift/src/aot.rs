@@ -21,6 +21,12 @@ pub struct AOTCompiler {
     print_i64_func_id: FuncId,
 }
 
+impl Default for AOTCompiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AOTCompiler {
     pub fn new() -> Self {
         let mut flag_builder = settings::builder();
@@ -107,6 +113,7 @@ impl AOTCompiler {
         Ok(product.emit().unwrap())
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn compile_chunk(&mut self, chunk: &Chunk, arg_count: usize, has_return: bool) -> Result<(), String> {
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
         

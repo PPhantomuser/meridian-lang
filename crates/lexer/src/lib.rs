@@ -365,7 +365,7 @@ impl<'a> Lexer<'a> {
         let mut end = start + 1;
         let mut closed = false;
 
-        while let Some((idx, ch)) = self.chars.next() {
+        for (idx, ch) in self.chars.by_ref() {
             end = idx + ch.len_utf8();
             if ch == '"' {
                 closed = true;
