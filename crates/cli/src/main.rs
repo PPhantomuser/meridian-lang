@@ -177,26 +177,61 @@ fn load_module(
 
     for stmt in program.statements {
         if let Stmt::Import(import_path, span) = stmt {
-            let mut next_path = parent_dir.join(&import_path);
+            let mut next_path;
             
-            // Check if it's a dependency from Meridian.toml
-            if !next_path.exists() {
-                if let Some(paths) = resolved_paths {
-                    if let Some(dep_path) = paths.get(&import_path) {
-                        let lib_path = dep_path.join("src").join("lib.mr");
-                        let main_path = dep_path.join("src").join("main.mr");
-                        if lib_path.exists() {
-                            next_path = lib_path;
-                        } else if main_path.exists() {
-                            next_path = main_path;
-                        } else {
+            if import_path.starts_with("http://") || import_path.starts_with("https://") {
+                let cache_dir = std::env::temp_dir().join("meridian_cache");
+                let _ = std::fs::create_dir_all(&cache_dir);
+                let hash = {
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = DefaultHasher::new();
+                    import_path.hash(&mut hasher);
+                    hasher.finish()
+                };
+                let cached_file = cache_dir.join(format!("{:016x}.mr", hash));
+                if !cached_file.exists() {
+                    match ureq::get(&import_path).call() {
+                        Ok(response) => {
+                            if let Ok(text) = response.into_string() {
+                                let _ = std::fs::write(&cached_file, text);
+                            }
+                        }
+                        Err(e) => {
                             diagnostics.push(Diagnostic::new(
-                                format!("Could not find src/lib.mr or src/main.mr in dependency '{}'", import_path),
-                                "MER0203".to_string(),
+                                format!("Failed to fetch URL '{}': {}", import_path, e),
+                                "MER0205".to_string(),
                                 span,
                                 DiagnosticCategory::Semantic,
                                 None,
                             ));
+                            continue;
+                        }
+                    }
+                }
+                next_path = cached_file;
+            } else {
+                next_path = parent_dir.join(&import_path);
+                
+                // Check if it's a dependency from Meridian.toml
+                if !next_path.exists() {
+                    if let Some(paths) = resolved_paths {
+                        if let Some(dep_path) = paths.get(&import_path) {
+                            let lib_path = dep_path.join("src").join("lib.mr");
+                            let main_path = dep_path.join("src").join("main.mr");
+                            if lib_path.exists() {
+                                next_path = lib_path;
+                            } else if main_path.exists() {
+                                next_path = main_path;
+                            } else {
+                                diagnostics.push(Diagnostic::new(
+                                    format!("Could not find src/lib.mr or src/main.mr in dependency '{}'", import_path),
+                                    "MER0203".to_string(),
+                                    span,
+                                    DiagnosticCategory::Semantic,
+                                    None,
+                                ));
+                            }
                         }
                     }
                 }
@@ -372,7 +407,7 @@ fn main() {
             }
 
             let program_opt = load_module(&entry_file, &mut visited, &mut diagnostics, resolved_paths_map.as_ref());
-            if let Some(program) = program_opt {
+            if let Some(mut program) = program_opt {
                 if !diagnostics.is_empty() {
                     print_diagnostics(&diagnostics, cli.ai_diagnostics);
                     let has_errors = diagnostics.iter().any(|d| matches!(d.category, DiagnosticCategory::Syntax | DiagnosticCategory::Semantic | DiagnosticCategory::Lexical));
@@ -391,9 +426,11 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                let mut compiler = Compiler::new(analyzer.type_map, analyzer.resolved_names);
+                program.statements.extend(analyzer.get_monomorphized_statements());
+                let mut compiler = Compiler::new(analyzer.type_map, analyzer.resolved_names, analyzer.auto_borrows);
                 let program_ir = compiler.compile(&program);
 
+                println!("IR functions: {:?}", program_ir.functions.keys().collect::<Vec<_>>());
                 let aot = meridian_backend_cranelift::AOTCompiler::new();
                 let object_bytes = match aot.compile_to_object(&program_ir) {
                     Ok(bytes) => bytes,
@@ -515,7 +552,7 @@ int main(int argc, char** argv) {
             }
 
             program.statements.extend(semantic.get_monomorphized_statements());
-            let compiler = Compiler::new(semantic.type_map, semantic.resolved_names);
+            let compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows);
             let program_ir = compiler.compile(&program);
 
             if *release {
@@ -697,7 +734,7 @@ int main(int argc, char** argv) {
                 }
 
                 program.statements.extend(semantic.get_monomorphized_statements());
-                let compiler = Compiler::new(semantic.type_map, semantic.resolved_names);
+                let compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows);
                 let program_ir = compiler.compile(&program);
 
                 for (chunk, _, _) in program_ir.functions.values() {

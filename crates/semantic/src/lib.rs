@@ -28,7 +28,7 @@ struct FunctionSignature {
     return_type: Type,
     span: Span,
     is_extern: bool,
-    type_params: Vec<String>,
+    type_params: Vec<meridian_ast::TypeParam>,
 }
 
 #[derive(Clone)]
@@ -42,7 +42,7 @@ struct MacroDefinition {
 struct StructSignature {
     fields: HashMap<String, Type>,
     span: Span,
-    type_params: Vec<String>,
+    type_params: Vec<meridian_ast::TypeParam>,
 }
 
 #[derive(Clone)]
@@ -50,7 +50,7 @@ struct StructSignature {
 struct EnumSignature {
     variants: HashMap<String, Vec<Type>>,
     span: Span,
-    type_params: Vec<String>,
+    type_params: Vec<meridian_ast::TypeParam>,
 }
 
 #[derive(Clone)]
@@ -59,7 +59,7 @@ struct TraitSignature {
     #[allow(dead_code)]
     span: Span,
     #[allow(dead_code)]
-    type_params: Vec<String>,
+    type_params: Vec<meridian_ast::TypeParam>,
 }
 
 pub struct SemanticAnalyzer {
@@ -87,6 +87,7 @@ pub struct SemanticAnalyzer {
     pub type_map: std::collections::HashMap<Span, Type>,
     pub resolved_names: std::collections::HashMap<Span, String>,
     pub capabilities: std::collections::HashSet<String>,
+    pub auto_borrows: std::collections::HashSet<Span>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -119,6 +120,7 @@ impl SemanticAnalyzer {
             type_map: std::collections::HashMap::new(),
             resolved_names: std::collections::HashMap::new(),
             capabilities: std::collections::HashSet::new(),
+            auto_borrows: std::collections::HashSet::new(),
         };
         // Register standard library
         let native_funcs = vec![
@@ -247,7 +249,20 @@ impl SemanticAnalyzer {
                         
                         let mut type_bindings = HashMap::new();
                         for (i, param) in type_params.iter().enumerate() {
-                            type_bindings.insert(param.clone(), type_args[i].clone());
+                                                        type_bindings.insert(param.name.clone(), type_args[i].clone());
+                            for bound in &param.bounds {
+                                let arg_name = meridian_ast::type_to_string(&type_args[i]);
+                                let cap_str = format!("{} implements {}", arg_name, bound);
+                                if !self.capabilities.contains(&cap_str) {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        format!("Type '{}' does not implement required trait '{}'", arg_name, bound),
+                                        "MER0107".to_string(),
+                                        span,
+                                        DiagnosticCategory::Type,
+                                        None,
+                                    ));
+                                }
+                            }
                         }
                         
                         let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
@@ -282,7 +297,20 @@ impl SemanticAnalyzer {
                         
                         let mut type_bindings = HashMap::new();
                         for (i, param) in type_params.iter().enumerate() {
-                            type_bindings.insert(param.clone(), type_args[i].clone());
+                                                        type_bindings.insert(param.name.clone(), type_args[i].clone());
+                            for bound in &param.bounds {
+                                let arg_name = meridian_ast::type_to_string(&type_args[i]);
+                                let cap_str = format!("{} implements {}", arg_name, bound);
+                                if !self.capabilities.contains(&cap_str) {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        format!("Type '{}' does not implement required trait '{}'", arg_name, bound),
+                                        "MER0107".to_string(),
+                                        span,
+                                        DiagnosticCategory::Type,
+                                        None,
+                                    ));
+                                }
+                            }
                         }
                         
                         let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
@@ -846,6 +874,7 @@ impl SemanticAnalyzer {
                             None,
                         ));
                     }
+                    self.capabilities.insert(format!("{} implements {}", target_name, t_name));
                 }
 
                 let prev_impl = self.current_impl_target.clone();
@@ -1135,7 +1164,7 @@ impl SemanticAnalyzer {
                                 for (i, param) in parameters.iter().enumerate() {
                                     if i < arg_types.len() {
                                         if let Type::Struct(t_name) = &param.ty {
-                                            if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                            if let Some(pos) = type_params.iter().position(|p| p.name == *t_name) {
                                                 if inferred_args[pos] == Type::Unknown {
                                                     inferred_args[pos] = arg_types[i].clone();
                                                 }
@@ -1144,7 +1173,6 @@ impl SemanticAnalyzer {
                                     }
                                 }
                                 
-                                println!("inferred_args for {}: {:?}", name, inferred_args);
                                 
                                 if inferred_args.iter().all(|t| *t != Type::Unknown) {
                                     let type_args_strings: Vec<String> = inferred_args.iter().map(meridian_ast::type_to_string).collect();
@@ -1154,7 +1182,20 @@ impl SemanticAnalyzer {
                                     if !self.functions.contains_key(&mono_name) {
                                         let mut type_bindings = std::collections::HashMap::new();
                                         for (j, param) in type_params.iter().enumerate() {
-                                            type_bindings.insert(param.clone(), inferred_args[j].clone());
+                                                                                        type_bindings.insert(param.name.clone(), inferred_args[j].clone());
+                                            for bound in &param.bounds {
+                                                let arg_name = meridian_ast::type_to_string(&inferred_args[j]);
+                                                let cap_str = format!("{} implements {}", arg_name, bound);
+                                                if !self.capabilities.contains(&cap_str) {
+                                                    self.diagnostics.push(Diagnostic::new(
+                                                        format!("Type '{}' does not implement required trait '{}'", arg_name, bound),
+                                                        "MER0107".to_string(),
+                                                        *span,
+                                                        DiagnosticCategory::Type,
+                                                        None,
+                                                    ));
+                                                }
+                                            }
                                         }
                                         
                                         let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
@@ -1172,11 +1213,8 @@ impl SemanticAnalyzer {
                                         self.monomorphized_stmts.push(mono_stmt);
                                     }
                                     actual_name = mono_name;
-                                    println!("actual_name changed to {}", actual_name);
-                                } else {
-                                    println!("Failed to infer all args for {}", name);
+                                }
                             }
-                        }
                     }
 
                     if let Some(signature) = self.functions.get(&actual_name).cloned() {
@@ -1499,7 +1537,16 @@ impl SemanticAnalyzer {
 
                             // We check the 'self' argument which is the first argument
                             let expected_self_ty = &signature.parameters[0];
-                            if !self.types_compatible(expected_self_ty, &obj_ty) {
+
+                            let mut adjusted_obj_ty = obj_ty.clone();
+                            if let Type::Reference(_, is_mut_expected) = expected_self_ty {
+                                if !matches!(obj_ty, Type::Reference(_, _)) {
+                                    adjusted_obj_ty = Type::Reference(Box::new(obj_ty.clone()), *is_mut_expected);
+                                    self.auto_borrows.insert(object.span());
+                                }
+                            }
+
+                            if !self.types_compatible(expected_self_ty, &adjusted_obj_ty) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Type mismatch in 'self' argument: expected {:?}, found {:?}", expected_self_ty, obj_ty),
                                     "MER0102".to_string(),
@@ -1663,7 +1710,7 @@ impl SemanticAnalyzer {
                         for g_field in generic_fields {
                             if let Some(f_type) = field_types.get(&g_field.name) {
                                 if let Type::Struct(t_name) = &g_field.ty {
-                                    if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                    if let Some(pos) = type_params.iter().position(|p| p.name == *t_name) {
                                         if inferred_args[pos] == Type::Unknown {
                                             inferred_args[pos] = f_type.clone();
                                         }
@@ -1800,7 +1847,7 @@ impl SemanticAnalyzer {
                                 if i < values.len() {
                                     let arg_ty = self.analyze_expression(&values[i]);
                                     if let Type::Struct(t_name) = v_type {
-                                        if let Some(pos) = type_params.iter().position(|p| p == t_name) {
+                                        if let Some(pos) = type_params.iter().position(|p| p.name == *t_name) {
                                             if inferred_args[pos] == Type::Unknown {
                                                 inferred_args[pos] = arg_ty.clone();
                                             }

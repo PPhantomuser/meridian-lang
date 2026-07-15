@@ -66,6 +66,12 @@ impl Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TypeParam {
+    pub name: String,
+    pub bounds: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Parameter {
     pub name: String,
     pub ty: Type,
@@ -91,7 +97,7 @@ pub enum Stmt {
     Print(Expr, Span),
     Function {
         name: String,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         parameters: Vec<Parameter>,
         return_type: Type,
         is_async: bool,
@@ -126,26 +132,26 @@ pub enum Stmt {
     },
     StructDef {
         name: String,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         fields: Vec<Parameter>,
         span: Span,
     },
     EnumDef {
         name: String,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         variants: Vec<(String, Vec<Type>)>,
         span: Span,
     },
     TraitDef {
         name: String,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         methods: Vec<Stmt>, // Stmt::Function definitions (can have empty body)
         span: Span,
     },
     Impl {
         trait_name: Option<String>,
         target_name: String,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         methods: Vec<Stmt>, // Stmt::Function
         span: Span,
     },

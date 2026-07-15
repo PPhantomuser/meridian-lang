@@ -1,0 +1,18 @@
+struct Counter {
+    count: Int,
+}
+
+impl Counter {
+    fn increment(&mut self) {
+        self.count = self.count + 1;
+        return;
+    }
+
+    fn get_count(self) -> Int {
+        return self.count;
+    }
+}
+
+let mut c = Counter { count: 0 };
+c.increment();
+print c.get_count();

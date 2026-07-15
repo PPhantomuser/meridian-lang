@@ -81,6 +81,7 @@ pub struct Compiler {
     loop_contexts: Vec<LoopContext>,
     type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>,
     resolved_names: HashMap<meridian_diagnostics::Span, String>,
+    auto_borrows: std::collections::HashSet<meridian_diagnostics::Span>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +91,7 @@ struct LoopContext {
 }
 
 impl Compiler {
-    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>, resolved_names: HashMap<meridian_diagnostics::Span, String>) -> Self {
+    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>, resolved_names: HashMap<meridian_diagnostics::Span, String>, auto_borrows: std::collections::HashSet<meridian_diagnostics::Span>) -> Self {
         Self {
             program_ir: ProgramIR::default(),
             current_chunk: Chunk::default(),
@@ -99,6 +100,7 @@ impl Compiler {
             loop_contexts: Vec::new(),
             type_map,
             resolved_names,
+            auto_borrows,
         }
     }
 
@@ -388,7 +390,12 @@ impl Compiler {
                     .cloned()
                     .unwrap_or_else(|| panic!("Method call name not resolved for '{}'", method_name));
 
-                let obj_reg = self.compile_expr(object);
+                let mut obj_reg = self.compile_expr(object);
+                if self.auto_borrows.contains(&object.span()) {
+                    let dest = self.alloc_reg();
+                    self.current_chunk.instructions.push(Opcode::Borrow(dest, obj_reg));
+                    obj_reg = dest;
+                }
                 let mut arg_regs = vec![obj_reg];
                 for arg in arguments {
                     arg_regs.push(self.compile_expr(arg));

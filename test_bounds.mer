@@ -1,0 +1,16 @@
+trait Debug {
+    fn display(self);
+}
+
+impl Debug for Int {
+    fn display(self) {
+        print self;
+    }
+}
+
+fn print_debug<T: Debug>(value: T) {
+    value.display();
+}
+
+print_debug(42);
+print_debug("hello");

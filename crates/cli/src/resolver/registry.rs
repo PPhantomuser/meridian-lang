@@ -60,7 +60,9 @@ pub fn get_package_index(pkg_name: &str) -> Option<RegistryIndex> {
     let index_file = get_index_dir().join(format!("{}.json", pkg_name));
     
     // Fetch from meridian-lang/registry using GitHub raw content API
-    let url = format!("https://raw.githubusercontent.com/meridian-lang/registry/main/index/{}.json", pkg_name);
+    let registry_base = std::env::var("MERIDIAN_REGISTRY_URL")
+        .unwrap_or_else(|_| "https://raw.githubusercontent.com/meridian-lang/registry/main".to_string());
+    let url = format!("{}/index/{}.json", registry_base, pkg_name);
     
     if let Ok(response) = ureq::get(&url).call() {
         if let Ok(content) = response.into_string() {

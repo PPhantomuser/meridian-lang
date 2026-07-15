@@ -19,6 +19,7 @@ pub struct AOTCompiler {
     functions: HashMap<String, FuncId>,
     print_func_id: FuncId,
     print_i64_func_id: FuncId,
+    malloc_func_id: FuncId,
 }
 
 impl Default for AOTCompiler {
@@ -46,7 +47,7 @@ impl AOTCompiler {
         
         // print_f64 returns nothing (void)
         let mut print_sig = module.make_signature();
-        print_sig.params.push(AbiParam::new(types::F64));
+        print_sig.params.push(AbiParam::new(types::I64));
         
         // For AOT, we expect print_f64 to be linked statically or dynamically.
         // It's usually imported from our C wrapper or standard library.
@@ -60,6 +61,13 @@ impl AOTCompiler {
             .declare_function("print_i64", Linkage::Import, &print_i64_sig)
             .unwrap();
 
+                let mut malloc_sig = module.make_signature();
+        malloc_sig.params.push(AbiParam::new(types::I64));
+        malloc_sig.returns.push(AbiParam::new(types::I64));
+        let malloc_func_id = module
+            .declare_function("malloc", Linkage::Import, &malloc_sig)
+            .unwrap();
+
         let ctx = module.make_context();
 
         Self {
@@ -69,6 +77,7 @@ impl AOTCompiler {
             functions: HashMap::new(),
             print_func_id,
             print_i64_func_id,
+            malloc_func_id,
         }
     }
 
@@ -76,9 +85,9 @@ impl AOTCompiler {
         for (name, (_chunk, _is_async, arg_count)) in &program_ir.functions {
             let mut sig = self.module.make_signature();
             for _ in 0..*arg_count {
-                sig.params.push(AbiParam::new(types::F64));
+                sig.params.push(AbiParam::new(types::I64));
             }
-            sig.returns.push(AbiParam::new(types::F64));
+            sig.returns.push(AbiParam::new(types::I64));
             let export_name = if name == "main" { "meridian_user_main" } else { name.as_str() };
             let func_id = self.module.declare_function(export_name, Linkage::Export, &sig).unwrap();
             self.functions.insert(name.clone(), func_id);
@@ -87,9 +96,9 @@ impl AOTCompiler {
         for (name, arg_count) in &program_ir.extern_functions {
             let mut sig = self.module.make_signature();
             for _ in 0..*arg_count {
-                sig.params.push(AbiParam::new(types::F64));
+                sig.params.push(AbiParam::new(types::I64));
             }
-            sig.returns.push(AbiParam::new(types::F64));
+            sig.returns.push(AbiParam::new(types::I64));
             let func_id = self.module.declare_function(name, Linkage::Import, &sig).unwrap();
             self.functions.insert(name.clone(), func_id);
         }
@@ -118,10 +127,10 @@ impl AOTCompiler {
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
         
         for _ in 0..arg_count {
-            builder.func.signature.params.push(AbiParam::new(types::F64));
+            builder.func.signature.params.push(AbiParam::new(types::I64));
         }
         if has_return {
-            builder.func.signature.returns.push(AbiParam::new(types::F64));
+            builder.func.signature.returns.push(AbiParam::new(types::I64));
         } else {
             builder.func.signature.returns.push(AbiParam::new(types::I32));
         }
@@ -143,8 +152,7 @@ impl AOTCompiler {
 
         for i in 0..arg_count {
             let val = builder.block_params(entry_block)[i];
-            let val_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val);
-            builder.ins().stack_store(val_i64, slots[i], 0);
+            builder.ins().stack_store(val, slots[i], 0);
         }
 
         let mut blocks = vec![entry_block];
@@ -245,23 +253,23 @@ impl AOTCompiler {
                         let mut call_args = Vec::new();
                         for a in 0..*arg_count {
                             let arg_i64 = builder.ins().stack_load(types::I64, slots[*arg_start + a], 0);
-                            let arg = builder.ins().bitcast(types::F64, MemFlags::new(), arg_i64);
-                            call_args.push(arg);
+                            call_args.push(arg_i64);
                         }
                         let local_func = self.module.declare_func_in_func(*func_id, builder.func);
                         let call = builder.ins().call(local_func, &call_args);
                         let res = builder.inst_results(call)[0];
-                        let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), res);
-                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                        builder.ins().stack_store(res, slots[*dest], 0);
+                    } else {
+                        panic!("Function not found in AOT: {}", name);
                     }
                 }
                 Opcode::Return(reg) => {
                     if has_return {
                         let val_i64 = builder.ins().stack_load(types::I64, slots[*reg], 0);
-                        let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
-                        builder.ins().return_(&[val]);
+                        builder.ins().return_(&[val_i64]);
                     } else {
-                        builder.ins().return_(&[]);
+                        let zero = builder.ins().iconst(types::I32, 0);
+                        builder.ins().return_(&[zero]);
                     }
                     block_terminated = true;
                 }

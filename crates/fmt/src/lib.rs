@@ -186,7 +186,14 @@ impl Formatter {
                 self.output.push_str("trait ");
                 self.output.push_str(name);
                 if !type_params.is_empty() {
-                    self.output.push_str(&format!("<{}>", type_params.join(", ")));
+                    let param_strs: Vec<String> = type_params.iter().map(|p| {
+                        if p.bounds.is_empty() {
+                            p.name.clone()
+                        } else {
+                            format!("{}: {}", p.name, p.bounds.join(" + "))
+                        }
+                    }).collect();
+                    self.output.push_str(&format!("<{}>", param_strs.join(", ")));
                 }
                 self.output.push_str(" {\n");
                 self.indent_level += 1;
@@ -203,7 +210,14 @@ impl Formatter {
                 self.push_indent();
                 self.output.push_str("impl");
                 if !type_params.is_empty() {
-                    self.output.push_str(&format!("<{}>", type_params.join(", ")));
+                    let param_strs: Vec<String> = type_params.iter().map(|p| {
+                        if p.bounds.is_empty() {
+                            p.name.clone()
+                        } else {
+                            format!("{}: {}", p.name, p.bounds.join(" + "))
+                        }
+                    }).collect();
+                    self.output.push_str(&format!("<{}>", param_strs.join(", ")));
                 }
                 if let Some(t_name) = trait_name {
                     self.output.push_str(&format!(" {} for", t_name));

@@ -363,39 +363,7 @@ impl<'a> Parser<'a> {
         };
         self.advance(); // consume trait name
 
-        let mut type_params = Vec::new();
-        if self.current_token.kind == TokenKind::LessThan {
-            self.advance(); // consume <
-            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
-                if let TokenKind::Identifier(param_name) = &self.current_token.kind {
-                    type_params.push(param_name.clone());
-                    self.advance();
-                } else {
-                    self.diagnostics.push(Diagnostic::new(
-                        "Expected type parameter name".to_string(),
-                        "MER0090".to_string(),
-                        self.current_token.span,
-                        DiagnosticCategory::Syntax,
-                        None,
-                    ));
-                    return None;
-                }
-
-                if self.current_token.kind == TokenKind::Comma {
-                    self.advance();
-                } else if self.current_token.kind != TokenKind::GreaterThan {
-                    self.diagnostics.push(Diagnostic::new(
-                        "Expected ',' or '>' after type parameter".to_string(),
-                        "MER0091".to_string(),
-                        self.current_token.span,
-                        DiagnosticCategory::Syntax,
-                        None,
-                    ));
-                    return None;
-                }
-            }
-            self.advance(); // consume >
-        }
+        let type_params = self.parse_generic_type_params();
 
         if self.current_token.kind != TokenKind::LBrace {
             self.diagnostics.push(Diagnostic::new(
@@ -578,39 +546,7 @@ impl<'a> Parser<'a> {
         let start_span = self.current_token.span;
         self.advance(); // consume 'impl'
 
-        let mut type_params = Vec::new();
-        if self.current_token.kind == TokenKind::LessThan {
-            self.advance(); // consume <
-            while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
-                if let TokenKind::Identifier(param_name) = &self.current_token.kind {
-                    type_params.push(param_name.clone());
-                    self.advance();
-                } else {
-                    self.diagnostics.push(Diagnostic::new(
-                        "Expected type parameter name".to_string(),
-                        "MER0090".to_string(),
-                        self.current_token.span,
-                        DiagnosticCategory::Syntax,
-                        None,
-                    ));
-                    return None;
-                }
-
-                if self.current_token.kind == TokenKind::Comma {
-                    self.advance();
-                } else if self.current_token.kind != TokenKind::GreaterThan {
-                    self.diagnostics.push(Diagnostic::new(
-                        "Expected ',' or '>' after type parameter".to_string(),
-                        "MER0091".to_string(),
-                        self.current_token.span,
-                        DiagnosticCategory::Syntax,
-                        None,
-                    ));
-                    return None;
-                }
-            }
-            self.advance(); // consume >
-        }
+        let type_params = self.parse_generic_type_params();
 
         let mut trait_name = None;
         let mut target_name = match &self.current_token.kind {
@@ -1330,13 +1266,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_generic_type_params(&mut self) -> Vec<String> {
+    fn parse_generic_type_params(&mut self) -> Vec<meridian_ast::TypeParam> {
         let mut params = Vec::new();
         if self.current_token.kind == TokenKind::LessThan {
             self.advance(); // consume <
             while self.current_token.kind != TokenKind::GreaterThan && self.current_token.kind != TokenKind::EOF {
-                if let TokenKind::Identifier(name) = &self.current_token.kind {
-                    params.push(name.clone());
+                let name = if let TokenKind::Identifier(name) = &self.current_token.kind {
+                    name.clone()
                 } else {
                     self.diagnostics.push(Diagnostic::new(
                         "Expected type parameter name".to_string(),
@@ -1346,8 +1282,36 @@ impl<'a> Parser<'a> {
                         None,
                     ));
                     break;
-                }
+                };
                 self.advance();
+
+                let mut bounds = Vec::new();
+                if self.current_token.kind == TokenKind::Colon {
+                    self.advance(); // consume :
+                    loop {
+                        if let TokenKind::Identifier(bound) = &self.current_token.kind {
+                            bounds.push(bound.clone());
+                            self.advance();
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected trait name for bound".to_string(),
+                                "MER0097".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            break;
+                        }
+
+                        if self.current_token.kind == TokenKind::Plus {
+                            self.advance(); // consume +
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                params.push(meridian_ast::TypeParam { name, bounds });
                 
                 if self.current_token.kind == TokenKind::Comma {
                     self.advance();
