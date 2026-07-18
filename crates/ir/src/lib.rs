@@ -29,14 +29,14 @@ pub enum Opcode {
     AsyncCall(Register, String, Register, usize), // dest, func, arg_start, count
     Await(Register, Register),         // dest, src_future
     Spawn(Register, Register),         // dest, src_future
-    MakeStruct(Register, String, Vec<String>, Register), // dest, struct_name, field_names, first_field_reg
-    FieldAccess(Register, Register, String), // dest, obj, field_name
-    FieldAssign(Register, String, Register), // obj, field_name, value (no dest)
+    MakeStruct(Register, usize, Register), // dest, field_count, first_field_reg
+    FieldAccess(Register, Register, usize), // dest, obj, field_idx
+    FieldAssign(Register, usize, Register), // obj, field_idx, value (no dest)
     MakeArray(Register, Register, usize), // dest, first_elem_reg, count
     ArrayIndex(Register, Register, Register), // dest, obj, index
     ArrayAssign(Register, Register, Register), // obj, index, value
-    MakeEnum(Register, String, String, Register, usize), // dest, enum_name, variant_name, value_start_reg, count
-    CheckEnum(Register, Register, String), // dest (bool), obj, variant_name
+    MakeEnum(Register, usize, Register, usize), // dest, variant_idx, value_start_reg, count
+    CheckEnum(Register, Register, usize), // dest, obj, variant_idx
     ExtractEnum(Register, Register, usize), // dest_start, obj (gets inner values), count
     TryUnwrap(Register, Register),     // dest, src (unwraps Ok, returns if Err)
 }
@@ -71,6 +71,8 @@ pub struct ProgramIR {
     pub functions: HashMap<String, (Chunk, bool, usize)>,
     pub extern_functions: HashMap<String, usize>, // name -> arg_count
     pub macros: HashMap<String, (Vec<meridian_ast::Parameter>, Expr)>,
+    pub struct_layouts: HashMap<String, Vec<String>>,
+    pub enum_layouts: HashMap<String, Vec<String>>,
 }
 
 pub struct Compiler {
@@ -91,9 +93,19 @@ struct LoopContext {
 }
 
 impl Compiler {
-    pub fn new(type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>, resolved_names: HashMap<meridian_diagnostics::Span, String>, auto_borrows: std::collections::HashSet<meridian_diagnostics::Span>) -> Self {
+    pub fn new(
+        type_map: HashMap<meridian_diagnostics::Span, meridian_ast::Type>,
+        resolved_names: HashMap<meridian_diagnostics::Span, String>,
+        auto_borrows: std::collections::HashSet<meridian_diagnostics::Span>,
+        struct_layouts: HashMap<String, Vec<String>>,
+        enum_layouts: HashMap<String, Vec<String>>,
+    ) -> Self {
+        let mut program_ir = ProgramIR::default();
+        program_ir.struct_layouts = struct_layouts;
+        program_ir.enum_layouts = enum_layouts;
+
         Self {
-            program_ir: ProgramIR::default(),
+            program_ir,
             current_chunk: Chunk::default(),
             next_reg: 0,
             locals: HashMap::new(),
@@ -431,7 +443,9 @@ impl Compiler {
                 }
                 
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, actual_name, variant_name.clone(), start_reg, val_regs.len()));
+                let variants = self.program_ir.enum_layouts.get(&actual_name).unwrap();
+                let variant_idx = variants.iter().position(|v| v == variant_name).unwrap();
+                self.current_chunk.instructions.push(Opcode::MakeEnum(dest, variant_idx, start_reg, val_regs.len()));
                 dest
             }
             Expr::Match { value, arms, .. } => {
@@ -454,9 +468,12 @@ impl Compiler {
                             self.locals = old_locals;
                             break; // CatchAll must be last semantically
                         }
-                        Pattern::EnumVariant { enum_name: _, variant_name, binding_names, .. } => {
+                        Pattern::EnumVariant { enum_name, variant_name, binding_names, .. } => {
+                            let variants = self.program_ir.enum_layouts.get(enum_name).unwrap();
+                            let variant_idx = variants.iter().position(|v| v == variant_name).unwrap();
+                            
                             let check_reg = self.alloc_reg();
-                            self.current_chunk.instructions.push(Opcode::CheckEnum(check_reg, val_reg, variant_name.clone()));
+                            self.current_chunk.instructions.push(Opcode::CheckEnum(check_reg, val_reg, variant_idx));
                             
                             let jmp_next = self.current_chunk.instructions.len();
                             self.current_chunk.instructions.push(Opcode::JumpIfFalse(check_reg, 0));
@@ -545,24 +562,18 @@ impl Compiler {
             }
             Expr::StructInit { name, fields, span, .. } => {
                 let actual_name = self.resolved_names.get(span).unwrap_or(name).clone();
-                let mut sorted_fields = fields.clone();
-                sorted_fields.sort_by(|a, b| a.0.cmp(&b.0));
+                let field_names = self.program_ir.struct_layouts.get(&actual_name).unwrap().clone();
                 
-                let mut field_regs = Vec::new();
-                let mut field_names = Vec::new();
-                for (fname, expr) in &sorted_fields {
-                    field_names.push(fname.clone());
-                    field_regs.push(self.compile_expr(expr));
-                }
-                
-                let first_field_reg = self.alloc_reg();
-                for (i, reg) in field_regs.iter().enumerate() {
+                let start_reg = self.alloc_reg();
+                for (i, expected_fname) in field_names.iter().enumerate() {
+                    let (_, expr) = fields.iter().find(|(n, _)| n == expected_fname).unwrap();
+                    let val_reg = self.compile_expr(expr);
                     if i > 0 { self.alloc_reg(); }
-                    self.current_chunk.instructions.push(Opcode::Move(first_field_reg + i, *reg));
+                    self.current_chunk.instructions.push(Opcode::Move(start_reg + i, val_reg));
                 }
                 
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::MakeStruct(dest, actual_name, field_names, first_field_reg));
+                self.current_chunk.instructions.push(Opcode::MakeStruct(dest, field_names.len(), start_reg));
                 dest
             }
             Expr::ArrayInit { elements, .. } => {
@@ -581,16 +592,49 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::MakeArray(dest, first_elem_reg, elements.len()));
                 dest
             }
-            Expr::FieldAccess { object, field_name, .. } => {
-                let obj_reg = self.compile_expr(object);
+            Expr::FieldAccess { object, field_name, span } => {
+                let mut obj_reg = self.compile_expr(object);
                 let dest = self.alloc_reg();
-                self.current_chunk.instructions.push(Opcode::FieldAccess(dest, obj_reg, field_name.clone()));
+                
+                let obj_ty = self.type_map.get(&object.span()).unwrap().clone();
+                let struct_name = match obj_ty {
+                    Type::Struct(n) => n,
+                    Type::Reference(inner, _) => {
+                        // Explicitly dereference before field access for AOT support
+                        let deref_reg = self.alloc_reg();
+                        self.current_chunk.instructions.push(Opcode::Dereference(deref_reg, obj_reg));
+                        obj_reg = deref_reg;
+                        
+                        if let Type::Struct(n) = &*inner { n.clone() } else { panic!("FieldAccess on non-struct reference: {:?}", inner) }
+                    }
+                    _ => panic!("FieldAccess on non-struct type: {:?} at span {:?}", obj_ty, span),
+                };
+                let fields = self.program_ir.struct_layouts.get(&struct_name).unwrap();
+                let field_idx = fields.iter().position(|f| f == field_name).unwrap();
+                
+                self.current_chunk.instructions.push(Opcode::FieldAccess(dest, obj_reg, field_idx));
                 dest
             }
-            Expr::FieldAssign { object, field_name, value, .. } => {
-                let obj_reg = self.compile_expr(object);
+            Expr::FieldAssign { object, field_name, value, span } => {
+                let mut obj_reg = self.compile_expr(object);
                 let val_reg = self.compile_expr(value);
-                self.current_chunk.instructions.push(Opcode::FieldAssign(obj_reg, field_name.clone(), val_reg));
+                
+                let obj_ty = self.type_map.get(&object.span()).unwrap().clone();
+                let struct_name = match obj_ty {
+                    Type::Struct(n) => n,
+                    Type::Reference(inner, _) => {
+                        let deref_reg = self.alloc_reg();
+                        self.current_chunk.instructions.push(Opcode::Dereference(deref_reg, obj_reg));
+                        obj_reg = deref_reg;
+                        
+                        if let Type::Struct(n) = &*inner { n.clone() } else { panic!("FieldAssign on non-struct reference") }
+                    }
+                    _ => panic!("FieldAssign on non-struct type"),
+                };
+                let fields = self.program_ir.struct_layouts.get(&struct_name).unwrap();
+                let field_idx = fields.iter().position(|f| f == field_name).unwrap();
+
+                self.current_chunk.instructions.push(Opcode::FieldAssign(obj_reg, field_idx, val_reg));
                 val_reg
             }
             Expr::If { condition, then_branch, else_branch, .. } => {

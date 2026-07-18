@@ -1387,77 +1387,7 @@ impl<'a> Parser<'a> {
                     "String" => { self.advance(); Type::String },
                     "Bool" => { self.advance(); Type::Bool },
                     "Unit" => { self.advance(); Type::Unit },
-                    "Option" => {
-                        self.advance(); // consume Option
-                        if self.current_token.kind == TokenKind::LessThan {
-                            self.advance(); // consume <
-                            let inner = self.parse_type_annotation()?;
-                            if self.current_token.kind == TokenKind::GreaterThan {
-                                self.advance(); // consume >
-                                return Some(Type::Option(Box::new(inner)));
-                            } else {
-                                self.diagnostics.push(Diagnostic::new(
-                                    "Expected '>' after Option type".to_string(),
-                                    "MER0042".to_string(),
-                                    self.current_token.span,
-                                    DiagnosticCategory::Syntax,
-                                    None,
-                                ));
-                                return None;
-                            }
-                        } else {
-                            self.diagnostics.push(Diagnostic::new(
-                                "Expected '<' after Option type".to_string(),
-                                "MER0043".to_string(),
-                                self.current_token.span,
-                                DiagnosticCategory::Syntax,
-                                None,
-                            ));
-                            return None;
-                        }
-                    }
-                    "Result" => {
-                        self.advance(); // consume Result
-                        if self.current_token.kind == TokenKind::LessThan {
-                            self.advance(); // consume <
-                            let ok = self.parse_type_annotation()?;
-                            if self.current_token.kind != TokenKind::Comma {
-                                self.diagnostics.push(Diagnostic::new(
-                                    "Expected ',' in Result type".to_string(),
-                                    "MER0044".to_string(),
-                                    self.current_token.span,
-                                    DiagnosticCategory::Syntax,
-                                    None,
-                                ));
-                                return None;
-                            }
-                            self.advance(); // consume ,
-                            let err = self.parse_type_annotation()?;
-                            
-                            if self.current_token.kind == TokenKind::GreaterThan {
-                                self.advance(); // consume >
-                                return Some(Type::Result(Box::new(ok), Box::new(err)));
-                            } else {
-                                self.diagnostics.push(Diagnostic::new(
-                                    "Expected '>' after Result type".to_string(),
-                                    "MER0045".to_string(),
-                                    self.current_token.span,
-                                    DiagnosticCategory::Syntax,
-                                    None,
-                                ));
-                                return None;
-                            }
-                        } else {
-                            self.diagnostics.push(Diagnostic::new(
-                                "Expected '<' after Result type".to_string(),
-                                "MER0046".to_string(),
-                                self.current_token.span,
-                                DiagnosticCategory::Syntax,
-                                None,
-                            ));
-                            return None;
-                        }
-                    }
+
                     "Future" => {
                         self.advance(); // consume "Future"
                         if self.current_token.kind == TokenKind::LessThan {

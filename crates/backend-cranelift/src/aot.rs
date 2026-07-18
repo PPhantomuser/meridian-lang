@@ -3,6 +3,7 @@ use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::{
     types, AbiParam, InstBuilder, MemFlags, StackSlotData, StackSlotKind,
 };
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::Context;
@@ -47,7 +48,7 @@ impl AOTCompiler {
         
         // print_f64 returns nothing (void)
         let mut print_sig = module.make_signature();
-        print_sig.params.push(AbiParam::new(types::I64));
+        print_sig.params.push(AbiParam::new(types::F64));
         
         // For AOT, we expect print_f64 to be linked statically or dynamically.
         // It's usually imported from our C wrapper or standard library.
@@ -314,12 +315,146 @@ impl AOTCompiler {
                     let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), val_f64);
                     builder.ins().stack_store(res_i64, slots[*dest], 0);
                 }
-                Opcode::Mul(..) | Opcode::Div(..) | Opcode::Ne(..) | Opcode::Le(..) | Opcode::Gt(..) | Opcode::Ge(..) | Opcode::MakeStruct(..) |
-                Opcode::FieldAccess(..) |
-                Opcode::FieldAssign(..) |
-                Opcode::MakeEnum(..) |
-                Opcode::CheckEnum(..) |
-                Opcode::ExtractEnum(..) |
+                Opcode::MakeStruct(dest, field_count, first_field_reg) => {
+                    let local_malloc = self.module.declare_func_in_func(self.malloc_func_id, builder.func);
+                    let size = builder.ins().iconst(types::I64, (*field_count * 8) as i64);
+                    let call = builder.ins().call(local_malloc, &[size]);
+                    let ptr = builder.inst_results(call)[0];
+                    
+                    for i in 0..*field_count {
+                        let val_i64 = builder.ins().stack_load(types::I64, slots[*first_field_reg + i], 0);
+                        builder.ins().store(MemFlags::new(), val_i64, ptr, (i * 8) as i32);
+                    }
+                    builder.ins().stack_store(ptr, slots[*dest], 0);
+                }
+                Opcode::FieldAccess(dest, obj_reg, field_idx) => {
+                    let ptr = builder.ins().stack_load(types::I64, slots[*obj_reg], 0);
+                    let val_i64 = builder.ins().load(types::I64, MemFlags::new(), ptr, (*field_idx * 8) as i32);
+                    builder.ins().stack_store(val_i64, slots[*dest], 0);
+                }
+                Opcode::FieldAssign(obj_reg, field_idx, val_reg) => {
+                    let ptr = builder.ins().stack_load(types::I64, slots[*obj_reg], 0);
+                    let val_i64 = builder.ins().stack_load(types::I64, slots[*val_reg], 0);
+                    builder.ins().store(MemFlags::new(), val_i64, ptr, (*field_idx * 8) as i32);
+                }
+                Opcode::Mul(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let res = builder.ins().fmul(l, r);
+                        let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), res);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let res_i64 = builder.ins().imul(l_i64, r_i64);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::Div(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let res = builder.ins().fdiv(l, r);
+                        let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), res);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let res_i64 = builder.ins().sdiv(l_i64, r_i64);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::Ne(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::NotEqual, l, r);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, l_i64, r_i64);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::Le(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual, l, r);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedLessThanOrEqual, l_i64, r_i64);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::Gt(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::GreaterThan, l, r);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThan, l_i64, r_i64);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::Ge(dest, left, right, is_float) => {
+                    let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
+                    let r_i64 = builder.ins().stack_load(types::I64, slots[*right], 0);
+                    if *is_float {
+                        let l = builder.ins().bitcast(types::F64, MemFlags::new(), l_i64);
+                        let r = builder.ins().bitcast(types::F64, MemFlags::new(), r_i64);
+                        let cmp = builder.ins().fcmp(cranelift_codegen::ir::condcodes::FloatCC::GreaterThanOrEqual, l, r);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThanOrEqual, l_i64, r_i64);
+                        let res_i64 = builder.ins().uextend(types::I64, cmp);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
+                }
+                Opcode::MakeEnum(dest, variant_idx, start_reg, count) => {
+                    let local_malloc = self.module.declare_func_in_func(self.malloc_func_id, builder.func);
+                    let size = builder.ins().iconst(types::I64, ((*count + 1) * 8) as i64);
+                    let call = builder.ins().call(local_malloc, &[size]);
+                    let ptr = builder.inst_results(call)[0];
+                    
+                    let tag = builder.ins().iconst(types::I64, *variant_idx as i64);
+                    builder.ins().store(MemFlags::new(), tag, ptr, 0);
+                    
+                    for i in 0..*count {
+                        let val_i64 = builder.ins().stack_load(types::I64, slots[*start_reg + i], 0);
+                        builder.ins().store(MemFlags::new(), val_i64, ptr, ((i + 1) * 8) as i32);
+                    }
+                    builder.ins().stack_store(ptr, slots[*dest], 0);
+                }
+                Opcode::CheckEnum(dest, obj_reg, expected_variant) => {
+                    let ptr = builder.ins().stack_load(types::I64, slots[*obj_reg], 0);
+                    let actual_variant = builder.ins().load(types::I64, MemFlags::new(), ptr, 0);
+                    let expected_val = builder.ins().iconst(types::I64, *expected_variant as i64);
+                    let cmp = builder.ins().icmp(IntCC::Equal, actual_variant, expected_val);
+                    let cmp_i64 = builder.ins().uextend(types::I64, cmp);
+                    builder.ins().stack_store(cmp_i64, slots[*dest], 0);
+                }
+                Opcode::ExtractEnum(dest_start, obj_reg, count) => {
+                    let ptr = builder.ins().stack_load(types::I64, slots[*obj_reg], 0);
+                    for i in 0..*count {
+                        let val = builder.ins().load(types::I64, MemFlags::new(), ptr, ((i + 1) * 8) as i32);
+                        builder.ins().stack_store(val, slots[*dest_start + i], 0);
+                    }
+                }
                 Opcode::MakeArray(..) |
                 Opcode::ArrayIndex(..) |
                 Opcode::ArrayAssign(..) |

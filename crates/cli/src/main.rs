@@ -394,10 +394,13 @@ fn main() {
                     resolved_paths_map = Some(result.resolved_paths);
                     
                     let main_path = current_dir.join("src").join("main.mr");
+                    let lib_path = current_dir.join("src").join("lib.mr");
                     if main_path.exists() {
                         entry_file = main_path;
+                    } else if lib_path.exists() {
+                        entry_file = lib_path;
                     } else {
-                        eprintln!("Error: src/main.mr not found in package");
+                        eprintln!("Error: Neither src/main.mr nor src/lib.mr found in package");
                         std::process::exit(1);
                     }
                 } else {
@@ -427,10 +430,11 @@ fn main() {
                 }
 
                 program.statements.extend(analyzer.get_monomorphized_statements());
-                let mut compiler = Compiler::new(analyzer.type_map, analyzer.resolved_names, analyzer.auto_borrows);
+                let struct_layouts = analyzer.get_struct_layouts();
+                let enum_layouts = analyzer.get_enum_layouts();
+                let mut compiler = Compiler::new(analyzer.type_map, analyzer.resolved_names, analyzer.auto_borrows, struct_layouts, enum_layouts);
                 let program_ir = compiler.compile(&program);
 
-                println!("IR functions: {:?}", program_ir.functions.keys().collect::<Vec<_>>());
                 let aot = meridian_backend_cranelift::AOTCompiler::new();
                 let object_bytes = match aot.compile_to_object(&program_ir) {
                     Ok(bytes) => bytes,
@@ -512,10 +516,13 @@ int main(int argc, char** argv) {
                             resolved_paths_map = Some(result.resolved_paths);
                             
                             let main_path = current_dir.join("src").join("main.mr");
+                            let lib_path = current_dir.join("src").join("lib.mr");
                             if main_path.exists() {
                                 entry_file = main_path;
+                            } else if lib_path.exists() {
+                                entry_file = lib_path;
                             } else {
-                                eprintln!("Error: src/main.mr not found in package");
+                                eprintln!("Error: Neither src/main.mr nor src/lib.mr found in package");
                                 std::process::exit(1);
                             }
                         }
@@ -552,7 +559,9 @@ int main(int argc, char** argv) {
             }
 
             program.statements.extend(semantic.get_monomorphized_statements());
-            let compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows);
+            let struct_layouts = semantic.get_struct_layouts();
+            let enum_layouts = semantic.get_enum_layouts();
+            let mut compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows, struct_layouts, enum_layouts);
             let program_ir = compiler.compile(&program);
 
             if *release {
@@ -734,7 +743,9 @@ int main(int argc, char** argv) {
                 }
 
                 program.statements.extend(semantic.get_monomorphized_statements());
-                let compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows);
+                let struct_layouts = semantic.get_struct_layouts();
+                let enum_layouts = semantic.get_enum_layouts();
+                let compiler = Compiler::new(semantic.type_map, semantic.resolved_names, semantic.auto_borrows, struct_layouts, enum_layouts);
                 let program_ir = compiler.compile(&program);
 
                 for (chunk, _, _) in program_ir.functions.values() {

@@ -12,9 +12,9 @@ pub enum Value {
     Reference(usize), // Index into the current task's registers
     Future(usize),    // TaskId
     NativeObject(String, std::sync::Arc<std::sync::Mutex<dyn std::any::Any + Send + Sync>>),
-    Struct(String, std::sync::Arc<std::sync::Mutex<HashMap<String, Value>>>),
+    Struct(String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>),
     Array(std::sync::Arc<std::sync::Mutex<Vec<Value>>>),
-    Enum(String, String, Vec<Value>),
+    Enum(usize, Vec<Value>),
     Error(String),
 }
 
@@ -34,11 +34,11 @@ impl std::fmt::Display for Value {
                 let fields = fields_arc.lock().unwrap();
                 write!(f, "{} {{ ", name)?;
                 let mut first = true;
-                for (k, v) in fields.iter() {
+                for v in fields.iter() {
                     if !first {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", k, v)?;
+                    write!(f, "{}", v)?;
                     first = false;
                 }
                 write!(f, " }}")
@@ -56,19 +56,17 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, "]")
             }
-            Value::Enum(enum_name, variant_name, values) => {
-                write!(f, "{}::{}", enum_name, variant_name)?;
-                if !values.is_empty() {
-                    write!(f, "(")?;
-                    for (i, v) in values.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{}", v)?;
+            Value::Enum(variant_idx, values) => {
+                write!(f, "Enum(Variant {}) {{ ", variant_idx)?;
+                let mut first = true;
+                for v in values {
+                    if !first {
+                        write!(f, ", ")?;
                     }
-                    write!(f, ")")?;
+                    write!(f, "{}", v)?;
+                    first = false;
                 }
-                Ok(())
+                write!(f, " }}")
             }
             Value::Error(msg) => write!(f, "<Error: {}>", msg),
         }
@@ -89,7 +87,7 @@ impl PartialEq for Value {
             (Value::NativeObject(tag_a, a), Value::NativeObject(tag_b, b)) => tag_a == tag_b && std::sync::Arc::ptr_eq(a, b),
             (Value::Struct(_, a), Value::Struct(_, b)) => std::sync::Arc::ptr_eq(a, b),
             (Value::Array(a), Value::Array(b)) => std::sync::Arc::ptr_eq(a, b),
-            (Value::Enum(e1, v1, val1), Value::Enum(e2, v2, val2)) => e1 == e2 && v1 == v2 && val1 == val2,
+            (Value::Enum(idx1, val1), Value::Enum(idx2, val2)) => idx1 == idx2 && val1 == val2,
             (Value::Error(a), Value::Error(b)) => a == b,
             _ => false,
         }
@@ -265,6 +263,7 @@ impl VM {
                             };
                             task.registers[base + dest] = val;
                         }
+
                         Opcode::Move(dest, src) => {
                             task.registers[base + dest] = task.registers[base + src].clone();
                         }
@@ -483,25 +482,25 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::MakeStruct(dest, name, field_names, first_field_reg) => {
-                            let mut map = HashMap::new();
-                            for (i, fname) in field_names.iter().enumerate() {
-                                map.insert(fname.clone(), task.registers[base + first_field_reg + i].clone());
+                        Opcode::MakeStruct(dest, field_count, first_field_reg) => {
+                            let mut map = Vec::new();
+                            for i in 0..field_count {
+                                map.push(task.registers[base + first_field_reg + i].clone());
                             }
-                            task.registers[base + dest] = Value::Struct(name.clone(), std::sync::Arc::new(std::sync::Mutex::new(map)));
+                            task.registers[base + dest] = Value::Struct("".to_string(), std::sync::Arc::new(std::sync::Mutex::new(map)));
                         }
-                        Opcode::FieldAccess(dest, obj_reg, field_name) => {
+                        Opcode::FieldAccess(dest, obj_reg, field_idx) => {
                             let mut obj_val = task.registers[base + obj_reg].clone();
                             while let Value::Reference(ptr) = obj_val {
                                 obj_val = task.registers[ptr].clone();
                             }
                             if let Value::Struct(_, map) = obj_val {
                                 let map = map.lock().unwrap();
-                                if let Some(val) = map.get(&field_name) {
-                                    task.registers[base + dest] = val.clone();
+                                if field_idx < map.len() {
+                                    task.registers[base + dest] = map[field_idx].clone();
                                 } else {
                                     return Err(RuntimeError {
-                                        message: format!("Struct missing field {}", field_name),
+                                        message: format!("Struct missing field index {}", field_idx),
                                         stack_trace: self.generate_stack_trace(&task, &frame),
                                     });
                                 }
@@ -512,15 +511,23 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::FieldAssign(obj_reg, field_name, val_reg) => {
+                        Opcode::FieldAssign(obj_reg, field_idx, val_reg) => {
                             let val = task.registers[base + val_reg].clone();
-                            let mut obj_val = task.registers[base + obj_reg].clone();
-                            while let Value::Reference(ptr) = obj_val {
-                                obj_val = task.registers[ptr].clone();
+                            let mut obj_ptr = base + obj_reg;
+                            loop {
+                                match &task.registers[obj_ptr] {
+                                    Value::Reference(inner) => {
+                                        obj_ptr = *inner;
+                                    }
+                                    _ => break,
+                                }
                             }
-                            if let Value::Struct(_, map) = obj_val {
+                            
+                            if let Value::Struct(_, map) = &task.registers[obj_ptr] {
                                 let mut map = map.lock().unwrap();
-                                map.insert(field_name.clone(), val);
+                                if field_idx < map.len() {
+                                    map[field_idx] = val;
+                                }
                             } else {
                                 return Err(RuntimeError {
                                     message: "FieldAssign on non-struct".to_string(),
@@ -600,32 +607,32 @@ impl VM {
                                 });
                             }
                         }
-                        Opcode::MakeEnum(dest, enum_name, variant_name, start_reg, count) => {
+                        Opcode::MakeEnum(dest, variant_idx, start_reg, count) => {
                             let mut values = Vec::new();
                             for i in 0..count {
                                 values.push(task.registers[base + start_reg + i].clone());
                             }
-                            task.registers[base + dest] = Value::Enum(enum_name, variant_name, values);
+                            task.registers[base + dest] = Value::Enum(variant_idx, values);
                         }
-                        Opcode::CheckEnum(dest, obj_reg, variant_name) => {
-                            let obj = task.registers[base + obj_reg].clone();
-                            if let Value::Enum(_, v_name, _) = obj {
-                                task.registers[base + dest] = Value::Bool(v_name == variant_name);
+                        Opcode::CheckEnum(dest, obj, expected_variant) => {
+                            let obj_val = &task.registers[base + obj];
+                            if let Value::Enum(actual_variant, _) = obj_val {
+                                task.registers[base + dest] = Value::Bool(*actual_variant == expected_variant);
                             } else {
                                 task.registers[base + dest] = Value::Bool(false);
                             }
                         }
-                        Opcode::ExtractEnum(dest_start, obj_reg, count) => {
-                            let obj = task.registers[base + obj_reg].clone();
-                            if let Value::Enum(_, _, values) = obj {
+                        Opcode::ExtractEnum(dest_start, obj, count) => {
+                            let obj_val = task.registers[base + obj].clone();
+                            if let Value::Enum(_, values) = obj_val {
                                 if values.len() != count {
                                     return Err(RuntimeError {
                                         message: format!("ExtractEnum expected {} values, found {}", count, values.len()),
                                         stack_trace: self.generate_stack_trace(&task, &frame),
                                     });
                                 }
-                                for (i, v) in values.into_iter().enumerate() {
-                                    task.registers[base + dest_start + i] = v;
+                                for (i, v) in values.iter().enumerate() {
+                                    task.registers[base + dest_start + i] = v.clone();
                                 }
                             } else {
                                 return Err(RuntimeError {
@@ -636,19 +643,12 @@ impl VM {
                         }
                         Opcode::TryUnwrap(dest, src) => {
                             let result_val = task.registers[base + src].clone();
-                            if let Value::Enum(enum_name, variant_name, values) = result_val {
-                                if enum_name == "Result" {
-                                    if variant_name == "Ok" {
-                                        task.registers[base + dest] = values[0].clone();
-                                    } else if variant_name == "Err" {
-                                        try_return_val = Some(Value::Enum(enum_name, variant_name, values));
-                                        break;
-                                    }
-                                } else {
-                                    return Err(RuntimeError {
-                                        message: format!("TryUnwrap expected Result, found Enum {}", enum_name),
-                                        stack_trace: self.generate_stack_trace(&task, &frame),
-                                    });
+                            if let Value::Enum(variant_idx, values) = result_val {
+                                if variant_idx == 0 { // Ok
+                                    task.registers[base + dest] = values[0].clone();
+                                } else { // Err
+                                    try_return_val = Some(Value::Enum(variant_idx, values));
+                                    break;
                                 }
                             } else {
                                 return Err(RuntimeError {

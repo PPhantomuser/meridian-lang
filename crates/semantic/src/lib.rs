@@ -40,7 +40,7 @@ struct MacroDefinition {
 #[derive(Clone)]
 #[allow(dead_code)]
 struct StructSignature {
-    fields: HashMap<String, Type>,
+    fields: Vec<(String, Type)>,
     span: Span,
     type_params: Vec<meridian_ast::TypeParam>,
 }
@@ -48,7 +48,7 @@ struct StructSignature {
 #[derive(Clone)]
 #[allow(dead_code)]
 struct EnumSignature {
-    variants: HashMap<String, Vec<Type>>,
+    variants: Vec<(String, Vec<Type>)>,
     span: Span,
     type_params: Vec<meridian_ast::TypeParam>,
 }
@@ -177,6 +177,12 @@ impl SemanticAnalyzer {
             return true;
         }
         match (expected, actual) {
+            (Type::Struct(n1), Type::Struct(n2)) | (Type::Enum(n1), Type::Enum(n2)) => {
+                if n2.starts_with(&format!("{}_", n1)) {
+                    return true;
+                }
+                false
+            }
             (Type::Result(ok1, err1), Type::Result(ok2, err2)) => {
                 self.types_compatible(ok1, ok2) && self.types_compatible(err1, err2)
             }
@@ -199,15 +205,14 @@ impl SemanticAnalyzer {
             if name == "Self" {
                 if let Some(target) = &self.current_impl_target {
                     *ty = Type::Struct(target.clone());
-                    return;
                 }
             }
         }
         match ty {
             Type::Struct(name) => {
-                if self.enums.contains_key(name) {
+                if self.enums.contains_key(name) || self.generic_enums.contains_key(name) {
                     *ty = Type::Enum(name.clone());
-                } else if !self.structs.contains_key(name) && !matches!(name.as_str(), "HashMap" | "HashSet" | "VecDeque" | "TcpListener" | "TcpStream" | "Library" | "Function") {
+                } else if !self.structs.contains_key(name) && !self.generic_structs.contains_key(name) && !matches!(name.as_str(), "HashMap" | "HashSet" | "VecDeque" | "TcpListener" | "TcpStream" | "Library" | "Function") {
                     self.diagnostics.push(Diagnostic::new(
                         format!("Unknown type '{}'", name),
                         "MER0100".to_string(),
@@ -268,9 +273,9 @@ impl SemanticAnalyzer {
                         let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
                         if let Stmt::StructDef { name: mono_stmt_name, fields, .. } = &mut mono_stmt {
                             *mono_stmt_name = mono_name.clone();
-                            let mut field_map = HashMap::new();
-                            for param in fields {
-                                field_map.insert(param.name.clone(), param.ty.clone());
+                            let mut field_map = Vec::new();
+                            for field in fields {
+                                field_map.push((field.name.clone(), field.ty.clone()));
                             }
                             self.structs.insert(mono_name.clone(), StructSignature {
                                 fields: field_map,
@@ -316,9 +321,17 @@ impl SemanticAnalyzer {
                         let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
                         if let Stmt::EnumDef { name: mono_stmt_name, variants, .. } = &mut mono_stmt {
                             *mono_stmt_name = mono_name.clone();
-                            let mut var_map = HashMap::new();
-                            for (v_name, v_type) in variants {
-                                var_map.insert(v_name.clone(), v_type.clone());
+                            let mut var_map = Vec::new();
+                            for (vname, vtypes) in variants {
+                                let mut new_vtypes = Vec::new();
+                                for ty in vtypes {
+                                    let mut new_ty = ty.clone();
+                                    if let Some(resolved) = type_bindings.get(&meridian_ast::type_to_string(&new_ty)) {
+                                        new_ty = resolved.clone();
+                                    }
+                                    new_vtypes.push(new_ty);
+                                }
+                                var_map.push((vname.clone(), new_vtypes));
                             }
                             self.enums.insert(mono_name.clone(), EnumSignature {
                                 variants: var_map,
@@ -434,6 +447,24 @@ impl SemanticAnalyzer {
         stmts
     }
 
+    pub fn get_struct_layouts(&self) -> std::collections::HashMap<String, Vec<String>> {
+        let mut layouts = std::collections::HashMap::new();
+        for (name, sig) in &self.structs {
+            let field_names: Vec<String> = sig.fields.iter().map(|(n, _)| n.clone()).collect();
+            layouts.insert(name.clone(), field_names);
+        }
+        layouts
+    }
+
+    pub fn get_enum_layouts(&self) -> std::collections::HashMap<String, Vec<String>> {
+        let mut layouts = std::collections::HashMap::new();
+        for (name, sig) in &self.enums {
+            let variant_names: Vec<String> = sig.variants.iter().map(|(n, _)| n.clone()).collect();
+            layouts.insert(name.clone(), variant_names);
+        }
+        layouts
+    }
+
     pub fn analyze_program(&mut self, program: &Program) {
         // Pass 1: Hoist functions
         for stmt in &program.statements {
@@ -488,9 +519,9 @@ impl SemanticAnalyzer {
                     }
                 }
             } else if let Stmt::StructDef { name, type_params, fields, span } = stmt {
-                let mut field_map = HashMap::new();
-                for param in fields {
-                    field_map.insert(param.name.clone(), param.ty.clone());
+                let mut field_map = Vec::new();
+                for field in fields {
+                    field_map.push((field.name.clone(), field.ty.clone()));
                 }
                 self.structs.insert(name.clone(), StructSignature { fields: field_map, span: *span, type_params: type_params.clone() });
                 self.index.definitions.insert(name.clone(), *span);
@@ -498,9 +529,9 @@ impl SemanticAnalyzer {
                     self.generic_structs.insert(name.clone(), stmt.clone());
                 }
             } else if let Stmt::EnumDef { name, type_params, variants, span } = stmt {
-                let mut var_map = HashMap::new();
-                for (v_name, v_type) in variants {
-                    var_map.insert(v_name.clone(), v_type.clone());
+                let mut var_map = Vec::new();
+                for (vname, vtypes) in variants {
+                    var_map.push((vname.clone(), vtypes.clone()));
                 }
                 self.enums.insert(name.clone(), EnumSignature { variants: var_map, span: *span, type_params: type_params.clone() });
                 self.index.definitions.insert(name.clone(), *span);
@@ -535,14 +566,19 @@ impl SemanticAnalyzer {
                         for p in m_parameters {
                             let mut ty = p.ty.clone();
                             // Expand `Self` to `target_name`
+                            let replacement_ty = if self.enums.contains_key(target_name) || self.generic_enums.contains_key(target_name) {
+                                Type::Enum(target_name.clone())
+                            } else {
+                                Type::Struct(target_name.clone())
+                            };
                             if let Type::Struct(n) = &ty {
                                 if n == "Self" {
-                                    ty = Type::Struct(target_name.clone());
+                                    ty = replacement_ty.clone();
                                 }
                             } else if let Type::Reference(inner, is_mut) = &ty {
                                 if let Type::Struct(n) = &**inner {
                                     if n == "Self" {
-                                        ty = Type::Reference(Box::new(Type::Struct(target_name.clone())), *is_mut);
+                                        ty = Type::Reference(Box::new(replacement_ty.clone()), *is_mut);
                                     }
                                 }
                             }
@@ -611,6 +647,14 @@ impl SemanticAnalyzer {
         // Pass 2: Analyze everything
         for stmt in &program.statements {
             self.analyze_statement(stmt);
+        }
+
+        // Pass 3: Analyze monomorphized statements
+        let mut analyzed_count = 0;
+        while analyzed_count < self.monomorphized_stmts.len() {
+            let stmt = self.monomorphized_stmts[analyzed_count].clone();
+            self.analyze_statement(&stmt);
+            analyzed_count += 1;
         }
     }
 
@@ -1503,9 +1547,11 @@ impl SemanticAnalyzer {
                 }
 
                 let obj_base_type_name = match &obj_ty {
-                    Type::Struct(n) => Some(n.clone()),
+                    Type::Struct(n) | Type::Enum(n) => Some(n.clone()),
                     Type::Reference(inner, _) => {
                         if let Type::Struct(n) = &**inner {
+                            Some(n.clone())
+                        } else if let Type::Enum(n) = &**inner {
                             Some(n.clone())
                         } else {
                             None
@@ -1643,7 +1689,7 @@ impl SemanticAnalyzer {
                 
                 if let Type::Struct(name) = &obj_ty {
                     if let Some(sig) = self.structs.get(name) {
-                        if let Some(ty) = sig.fields.get(field_name) {
+                        if let Some((_, ty)) = sig.fields.iter().find(|(n, _)| n == field_name) {
                             return ty.clone();
                         }
                         self.diagnostics.push(Diagnostic::new(
@@ -1674,8 +1720,8 @@ impl SemanticAnalyzer {
                 let val_ty = self.analyze_expression(value);
                 if let Type::Struct(name) = &obj_ty {
                     if let Some(sig) = self.structs.get(name) {
-                        if let Some(expected_ty) = sig.fields.get(field_name) {
-                            if expected_ty != &val_ty && val_ty != Type::Unknown && val_ty != Type::Error {
+                        if let Some((_, expected_ty)) = sig.fields.iter().find(|(n, _)| n == field_name) {
+                            if !self.types_compatible(expected_ty, &val_ty) {
                                 self.diagnostics.push(Diagnostic::new(
                                     format!("Type mismatch: expected {:?}, found {:?}", expected_ty, val_ty),
                                     "MER0152".to_string(),
@@ -1737,12 +1783,12 @@ impl SemanticAnalyzer {
                 };
 
                 if let Some(sig) = self.structs.get(&actual_name).cloned() {
-                    for (f_name, _) in fields {
-                        let val_ty = field_types.get(f_name).unwrap();
-                        if let Some(expected_ty) = sig.fields.get(f_name) {
-                            if !self.types_compatible(expected_ty, val_ty) {
+                    for (f_name, f_expr) in fields {
+                        let f_ty = self.analyze_expression(f_expr);
+                        if let Some((_, expected_ty)) = sig.fields.iter().find(|(n, _)| n == f_name) {
+                            if !self.types_compatible(expected_ty, &f_ty) {
                                 self.diagnostics.push(Diagnostic::new(
-                                    format!("Type mismatch in field '{}': expected {:?}, found {:?}", f_name, expected_ty, val_ty),
+                                    format!("Type mismatch in field '{}': expected {:?}, found {:?}", f_name, expected_ty, f_ty),
                                     "MER0153".to_string(),
                                     *span,
                                     DiagnosticCategory::Type,
@@ -1875,7 +1921,7 @@ impl SemanticAnalyzer {
                 };
 
                 if let Some(enum_sig) = self.enums.get(&actual_name).cloned() {
-                    if let Some(expected_types) = enum_sig.variants.get(variant_name) {
+                    if let Some((_, expected_types)) = enum_sig.variants.iter().find(|(n, _)| n == variant_name) {
                         if values.len() != expected_types.len() {
                             self.diagnostics.push(Diagnostic::new(
                                 format!("Enum variant '{}::{}' expects {} arguments, but found {}", enum_name, variant_name, expected_types.len(), values.len()),
@@ -2050,8 +2096,8 @@ impl SemanticAnalyzer {
                                 None,
                             ));
                         } else if let Some(sig) = self.enums.get(enum_name) {
-                            if let Some(v_tys) = sig.variants.get(variant_name) {
-                                payload_tys = v_tys.clone();
+                            if let Some((_, vtypes)) = sig.variants.iter().find(|(n, _)| n == variant_name) {
+                                payload_tys = vtypes.clone();
                             }
                         }
                     }
