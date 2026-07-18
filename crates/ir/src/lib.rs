@@ -615,7 +615,7 @@ impl Compiler {
                 self.current_chunk.instructions.push(Opcode::FieldAccess(dest, obj_reg, field_idx));
                 dest
             }
-            Expr::FieldAssign { object, field_name, value, span } => {
+            Expr::FieldAssign { object, field_name, value, span: _span } => {
                 let mut obj_reg = self.compile_expr(object);
                 let val_reg = self.compile_expr(value);
                 
