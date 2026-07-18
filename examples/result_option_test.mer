@@ -1,0 +1,23 @@
+fn safeDivide(a: Number, b: Number) -> Result<Number, String> {
+    if b == 0.0 {
+        return Result::Err("div by zero");
+    }
+    Result::Ok(a / b)
+}
+
+fn doDivide(a: Number, b: Number) -> Result<Number, String> {
+    let res = safeDivide(a, b)?;
+    Result::Ok(res)
+}
+
+fn getOptional(val: Number) -> Option<Number> {
+    if val > 0.0 {
+        return Option::Some(val);
+    }
+    Option::None
+}
+
+fn main() {
+    let r = doDivide(10.0, 2.0);
+    let o = getOptional(5.0);
+}

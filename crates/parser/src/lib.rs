@@ -1418,6 +1418,77 @@ impl<'a> Parser<'a> {
                         }
                     }
                     "Expr" | "Ident" | "Stmt" | "Block" => { self.advance(); Type::Meta(name.clone()) },
+                    "Option" => {
+                        self.advance(); // consume "Option"
+                        if self.current_token.kind == TokenKind::LessThan {
+                            self.advance(); // consume "<"
+                            let inner = self.parse_type_annotation()?;
+                            if self.current_token.kind == TokenKind::GreaterThan {
+                                self.advance(); // consume ">"
+                                return Some(Type::Option(Box::new(inner))); // RETURN EARLY
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected '>' after Option type".to_string(),
+                                    "MER0040".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected '<' after Option type".to_string(),
+                                "MER0041".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    }
+                    "Result" => {
+                        self.advance(); // consume "Result"
+                        if self.current_token.kind == TokenKind::LessThan {
+                            self.advance(); // consume "<"
+                            let ok_ty = self.parse_type_annotation()?;
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.advance(); // consume ","
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected ',' after Result Ok type".to_string(),
+                                    "MER0042".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                            let err_ty = self.parse_type_annotation()?;
+                            if self.current_token.kind == TokenKind::GreaterThan {
+                                self.advance(); // consume ">"
+                                return Some(Type::Result(Box::new(ok_ty), Box::new(err_ty))); // RETURN EARLY
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    "Expected '>' after Result Err type".to_string(),
+                                    "MER0040".to_string(),
+                                    self.current_token.span,
+                                    DiagnosticCategory::Syntax,
+                                    None,
+                                ));
+                                return None;
+                            }
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                "Expected '<' after Result type".to_string(),
+                                "MER0041".to_string(),
+                                self.current_token.span,
+                                DiagnosticCategory::Syntax,
+                                None,
+                            ));
+                            return None;
+                        }
+                    }
                     _ => {
                         // Check if it's a generic, like HashMap<K, V>
                         self.advance(); // consume ident

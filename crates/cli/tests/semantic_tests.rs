@@ -171,3 +171,14 @@ fn test_async_await() {
     assert!(stdout.contains("20"));
     assert!(stdout.contains("Done!"));
 }
+
+#[test]
+fn test_result_option_regression() {
+    let output = Command::new("cargo")
+        .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
+        .args(["run", "--bin", "merid", "--", "check", "examples/result_option_test.mer"])
+        .output()
+        .expect("Failed to execute command");
+    
+    assert!(output.status.success(), "Command failed: {}", String::from_utf8_lossy(&output.stderr));
+}

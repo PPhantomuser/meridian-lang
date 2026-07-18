@@ -455,13 +455,59 @@ impl AOTCompiler {
                         builder.ins().stack_store(val, slots[*dest_start + i], 0);
                     }
                 }
-                Opcode::MakeArray(..) |
-                Opcode::ArrayIndex(..) |
-                Opcode::ArrayAssign(..) |
+                Opcode::MakeArray(dest, first_elem_reg, count) => {
+                    let local_malloc = self.module.declare_func_in_func(self.malloc_func_id, builder.func);
+                    
+                    let data_size = builder.ins().iconst(types::I64, (*count as i64) * 8);
+                    let data_call = builder.ins().call(local_malloc, &[data_size]);
+                    let data_ptr = builder.inst_results(data_call)[0];
+                    
+                    for i in 0..*count {
+                        let val = builder.ins().stack_load(types::I64, slots[*first_elem_reg + i], 0);
+                        builder.ins().store(MemFlags::new(), val, data_ptr, (i * 8) as i32);
+                    }
+                    
+                    let struct_size = builder.ins().iconst(types::I64, 24);
+                    let struct_call = builder.ins().call(local_malloc, &[struct_size]);
+                    let struct_ptr = builder.inst_results(struct_call)[0];
+                    
+                    let len_val = builder.ins().iconst(types::I64, *count as i64);
+                    builder.ins().store(MemFlags::new(), data_ptr, struct_ptr, 0);
+                    builder.ins().store(MemFlags::new(), len_val, struct_ptr, 8);
+                    builder.ins().store(MemFlags::new(), len_val, struct_ptr, 16);
+                    
+                    builder.ins().stack_store(struct_ptr, slots[*dest], 0);
+                }
+                Opcode::ArrayIndex(dest, array_reg, index_reg) => {
+                    let struct_ptr = builder.ins().stack_load(types::I64, slots[*array_reg], 0);
+                    let data_ptr = builder.ins().load(types::I64, MemFlags::new(), struct_ptr, 0);
+                    let index_i64 = builder.ins().stack_load(types::I64, slots[*index_reg], 0);
+                    
+                    let eight = builder.ins().iconst(types::I64, 8);
+                    let offset = builder.ins().imul(index_i64, eight);
+                    let elem_addr = builder.ins().iadd(data_ptr, offset);
+                    
+                    let val = builder.ins().load(types::I64, MemFlags::new(), elem_addr, 0);
+                    builder.ins().stack_store(val, slots[*dest], 0);
+                }
+                Opcode::ArrayAssign(array_reg, index_reg, value_reg) => {
+                    let struct_ptr = builder.ins().stack_load(types::I64, slots[*array_reg], 0);
+                    let data_ptr = builder.ins().load(types::I64, MemFlags::new(), struct_ptr, 0);
+                    
+                    let index_i64 = builder.ins().stack_load(types::I64, slots[*index_reg], 0);
+                    
+                    let val = builder.ins().stack_load(types::I64, slots[*value_reg], 0);
+                    
+                    let eight = builder.ins().iconst(types::I64, 8);
+                    let offset = builder.ins().imul(index_i64, eight);
+                    let elem_addr = builder.ins().iadd(data_ptr, offset);
+                    
+                    builder.ins().store(MemFlags::new(), val, elem_addr, 0);
+                }
                 Opcode::AsyncCall(..) |
                 Opcode::Await(..) |
                 Opcode::Spawn(..) => {
-                    return Err("Struct/Enum/Array/Async opcodes are not supported in AOT MVP (fallback to VM recommended)".to_string());
+                    return Err("Async opcodes are not supported in AOT MVP (fallback to VM recommended)".to_string());
                 }
                 _ => {
                     return Err(format!("Unsupported opcode in AOT prototype: {:?}", inst));
