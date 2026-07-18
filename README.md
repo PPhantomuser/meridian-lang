@@ -18,7 +18,7 @@ Meridian was born out of a desire for a language that combines the **ergonomics 
 * **Dual Execution Modes:** Run fast in the VM, or compile to native machine code with Cranelift.
 * **Agentic by Design:** First-class language primitives designed for AI tool-calling, with an author-side `unsafe` gating model to mark isolated side effects (Note: this is not a caller-controlled security sandbox).
 * **Predictable Memory Model:** Uses automatic reference counting (ARC) for seamless, GC-pause-free memory management.
-* **Package Registry:** Currently relies on local-filesystem packages. Future versions will include network-based registry sharing.
+* **Package Registry:** Features a decentralized local-filesystem registry for publishing and importing packages. The language ships with `meridian-core` and `meridian-math` as standard library packages out-of-the-box. Future versions will include network-based registry sharing.
 
 ---
 
@@ -27,14 +27,30 @@ Meridian was born out of a desire for a language that combines the **ergonomics 
 Meridian syntax is designed to be clean, readable, and highly expressive.
 
 ```meridian
-// A simple async fetch example
-async fn fetch_data(id: Int) -> Future<Int> {
-    print "Fetching user data...";
-    return id * 10;
+import "meridian-core";
+import "meridian-math";
+
+struct Point {
+    x: Number,
+    y: Number,
 }
 
-let result = await fetch_data(5);
-print result;
+impl Point {
+    fn distance(self, other: Point) -> Number {
+        let m = Math{};
+        m.pow((self.x - other.x), 2) + m.pow((self.y - other.y), 2)
+    }
+}
+
+let p1 = Point { x: 0.0, y: 0.0 };
+let p2 = Point { x: 3.0, y: 4.0 };
+print p1.distance(p2); // Calculates distance squared (25.0)
+
+let opt: Option<Number> = Option::Some(42.0);
+let val = match opt {
+    Option::Some(v) => { v }
+    Option::None => { 0.0 }
+};
 ```
 
 ---
