@@ -504,6 +504,28 @@ impl AOTCompiler {
                     
                     builder.ins().store(MemFlags::new(), val, elem_addr, 0);
                 }
+                Opcode::TryUnwrap(dest, src) => {
+                    let ptr = builder.ins().stack_load(types::I64, slots[*src], 0);
+                    let tag = builder.ins().load(types::I64, MemFlags::new(), ptr, 0);
+                    let expected_ok = builder.ins().iconst(types::I64, 0);
+                    let is_err = builder.ins().icmp(IntCC::NotEqual, tag, expected_ok);
+                    
+                    let err_block = builder.create_block();
+                    let ok_block = builder.create_block();
+                    let next_block = blocks[i + 1];
+                    
+                    builder.ins().brif(is_err, err_block, &[], ok_block, &[]);
+                    
+                    builder.switch_to_block(err_block);
+                    builder.ins().return_(&[ptr]);
+                    
+                    builder.switch_to_block(ok_block);
+                    let val = builder.ins().load(types::I64, MemFlags::new(), ptr, 8);
+                    builder.ins().stack_store(val, slots[*dest], 0);
+                    builder.ins().jump(next_block, &[]);
+                    
+                    block_terminated = true;
+                }
                 Opcode::AsyncCall(..) |
                 Opcode::Await(..) |
                 Opcode::Spawn(..) => {

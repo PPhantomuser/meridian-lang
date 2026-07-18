@@ -462,6 +462,8 @@ impl SemanticAnalyzer {
             let variant_names: Vec<String> = sig.variants.iter().map(|(n, _)| n.clone()).collect();
             layouts.insert(name.clone(), variant_names);
         }
+        layouts.insert("Result".to_string(), vec!["Ok".to_string(), "Err".to_string()]);
+        layouts.insert("Option".to_string(), vec!["Some".to_string(), "None".to_string()]);
         layouts
     }
 
