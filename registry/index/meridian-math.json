@@ -1,0 +1,11 @@
+{
+  "name": "meridian-math",
+  "versions": [
+    {
+      "version": "0.1.0",
+      "source": "https://github.com/meridian-lang/std",
+      "checksum": "main",
+      "dependencies": null
+    }
+  ]
+}
