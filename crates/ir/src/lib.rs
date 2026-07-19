@@ -137,8 +137,10 @@ impl Compiler {
         for stmt in &program.statements {
             if let Stmt::MacroDef { name, parameters, body, .. } = stmt {
                 self.program_ir.macros.insert(name.clone(), (parameters.clone(), body.clone()));
-            } else if let Stmt::Function { name, .. } = stmt {
-                function_stmts.push((name.clone(), stmt));
+            } else if let Stmt::Function { name, type_params, .. } = stmt {
+                if type_params.is_empty() {
+                    function_stmts.push((name.clone(), stmt));
+                }
             } else if let Stmt::ExternBlock { functions, .. } = stmt {
                 for func in functions {
                     if let Stmt::Function { name, parameters, .. } = func {
@@ -147,13 +149,15 @@ impl Compiler {
                 }
             } else if let Stmt::TraitDef { .. } = stmt {
                 // Traits are purely compile-time
-            } else if let Stmt::Impl { target_name, methods, .. } = stmt {
-                for method in methods {
+            } else if let Stmt::Impl { target_name, methods, type_params, .. } = stmt {
+                if type_params.is_empty() {
+                    for method in methods {
                     if let Stmt::Function { name, .. } = method {
                         // Mangling exactly as in semantic analyzer
                         let mangled = format!("{}_{}", target_name, name);
                         function_stmts.push((mangled, method));
                     }
+                }
                 }
             } else {
                 main_stmts.push(stmt);

@@ -63,6 +63,7 @@ struct TraitSignature {
 }
 
 pub struct SemanticAnalyzer {
+    next_monomorphize_id: u32,
     pub diagnostics: Vec<Diagnostic>,
     scopes: Vec<HashMap<String, SymbolInfo>>,
     functions: HashMap<String, FunctionSignature>,
@@ -111,6 +112,7 @@ impl SemanticAnalyzer {
             generic_structs: HashMap::new(),
             generic_enums: HashMap::new(),
             monomorphized_stmts: Vec::new(),
+            next_monomorphize_id: 1,
             current_function_return_type: None,
             current_impl_target: None,
             in_loop_depth: 0,
@@ -270,7 +272,9 @@ impl SemanticAnalyzer {
                             }
                         }
                         
-                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                        let mono_id = self.next_monomorphize_id;
+                        self.next_monomorphize_id += 1;
+                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings, mono_id);
                         if let Stmt::StructDef { name: mono_stmt_name, fields, .. } = &mut mono_stmt {
                             *mono_stmt_name = mono_name.clone();
                             let mut field_map = Vec::new();
@@ -318,7 +322,9 @@ impl SemanticAnalyzer {
                             }
                         }
                         
-                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                        let mono_id = self.next_monomorphize_id;
+                        self.next_monomorphize_id += 1;
+                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings, mono_id);
                         if let Stmt::EnumDef { name: mono_stmt_name, variants, .. } = &mut mono_stmt {
                             *mono_stmt_name = mono_name.clone();
                             let mut var_map = Vec::new();
@@ -1267,7 +1273,9 @@ impl SemanticAnalyzer {
                                             }
                                         }
                                         
-                                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings);
+                                        let mono_id = self.next_monomorphize_id;
+                        self.next_monomorphize_id += 1;
+                        let mut mono_stmt = generic_stmt.monomorphize(&type_bindings, mono_id);
                                         if let Stmt::Function { name: mono_stmt_name, parameters: mono_params, return_type: mono_ret, span, .. } = &mut mono_stmt {
                                             *mono_stmt_name = mono_name.clone();
                                             let param_types = mono_params.iter().map(|p| p.ty.clone()).collect();

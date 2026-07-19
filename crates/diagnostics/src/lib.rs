@@ -4,11 +4,16 @@ use serde::{Deserialize, Serialize};
 pub struct Span {
     pub start: usize,
     pub end: usize,
+    pub id: u32,
 }
 
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
+        Self { start, end, id: 0 }
+    }
+
+    pub fn with_id(self, id: u32) -> Self {
+        Self { start: self.start, end: self.end, id }
     }
 }
 

@@ -547,14 +547,14 @@ pub enum BinaryOperator {
 }
 
 impl Expr {
-    pub fn monomorphize(&self, type_bindings: &std::collections::HashMap<String, Type>) -> Expr {
+    pub fn monomorphize(&self, type_bindings: &std::collections::HashMap<String, Type>, id: u32) -> Expr {
         match self {
             Expr::Call { callee, arguments, span } => {
-                let mono_callee = callee.monomorphize(type_bindings);
+                let mono_callee = callee.monomorphize(type_bindings, id);
                 Expr::Call {
                     callee: Box::new(mono_callee),
-                    arguments: arguments.iter().map(|a| a.monomorphize(type_bindings)).collect(),
-                    span: *span,
+                    arguments: arguments.iter().map(|a| a.monomorphize(type_bindings, id)).collect(),
+                    span: span.with_id(id),
                 }
             },
             Expr::StructInit { name, type_args: _, fields, span } => {
@@ -568,8 +568,8 @@ impl Expr {
                 Expr::StructInit {
                     name: mono_name,
                     type_args: vec![],
-                    fields: fields.iter().map(|(n, e)| (n.clone(), e.monomorphize(type_bindings))).collect(),
-                    span: *span,
+                    fields: fields.iter().map(|(n, e)| (n.clone(), e.monomorphize(type_bindings, id))).collect(),
+                    span: span.with_id(id),
                 }
             },
             Expr::EnumInit { enum_name, type_args: _, variant_name, values, span } => {
@@ -584,85 +584,85 @@ impl Expr {
                     enum_name: mono_name,
                     type_args: vec![],
                     variant_name: variant_name.clone(),
-                    values: values.iter().map(|v| v.monomorphize(type_bindings)).collect(),
-                    span: *span,
+                    values: values.iter().map(|v| v.monomorphize(type_bindings, id)).collect(),
+                    span: span.with_id(id),
                 }
             },
             Expr::Binary { left, operator, right, span } => Expr::Binary {
-                left: Box::new(left.monomorphize(type_bindings)),
+                left: Box::new(left.monomorphize(type_bindings, id)),
                 operator: *operator,
-                right: Box::new(right.monomorphize(type_bindings)),
-                span: *span,
+                right: Box::new(right.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::Match { value, arms, span } => Expr::Match {
-                value: Box::new(value.monomorphize(type_bindings)),
-                arms: arms.iter().map(|(p, e)| (p.clone(), e.monomorphize(type_bindings))).collect(),
-                span: *span,
+                value: Box::new(value.monomorphize(type_bindings, id)),
+                arms: arms.iter().map(|(p, e)| (p.clone(), e.monomorphize(type_bindings, id))).collect(),
+                span: span.with_id(id),
             },
-            Expr::Block(stmts, span) => Expr::Block(stmts.iter().map(|s| s.monomorphize(type_bindings)).collect(), *span),
-            Expr::Group(inner, span) => Expr::Group(Box::new(inner.monomorphize(type_bindings)), *span),
+            Expr::Block(stmts, span) => Expr::Block(stmts.iter().map(|s| s.monomorphize(type_bindings, id)).collect(), span.with_id(id)),
+            Expr::Group(inner, span) => Expr::Group(Box::new(inner.monomorphize(type_bindings, id)), span.with_id(id)),
             Expr::Range { start, end, inclusive, span } => Expr::Range {
-                start: Box::new(start.monomorphize(type_bindings)),
-                end: Box::new(end.monomorphize(type_bindings)),
+                start: Box::new(start.monomorphize(type_bindings, id)),
+                end: Box::new(end.monomorphize(type_bindings, id)),
                 inclusive: *inclusive,
-                span: *span,
+                span: span.with_id(id),
             },
             Expr::Borrow { expr, is_mut, span } => Expr::Borrow {
-                expr: Box::new(expr.monomorphize(type_bindings)),
+                expr: Box::new(expr.monomorphize(type_bindings, id)),
                 is_mut: *is_mut,
-                span: *span,
+                span: span.with_id(id),
             },
             Expr::Dereference { expr, span } => Expr::Dereference {
-                expr: Box::new(expr.monomorphize(type_bindings)),
-                span: *span,
+                expr: Box::new(expr.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::AsyncBlock { statements, span } => Expr::AsyncBlock {
-                statements: statements.iter().map(|s| s.monomorphize(type_bindings)).collect(),
-                span: *span,
+                statements: statements.iter().map(|s| s.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             Expr::Await { expr, span } => Expr::Await {
-                expr: Box::new(expr.monomorphize(type_bindings)),
-                span: *span,
+                expr: Box::new(expr.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::MacroCall { macro_name, arguments, span } => Expr::MacroCall {
                 macro_name: macro_name.clone(),
-                arguments: arguments.iter().map(|a| a.monomorphize(type_bindings)).collect(),
-                span: *span,
+                arguments: arguments.iter().map(|a| a.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             Expr::Spawn { expr, span } => Expr::Spawn {
-                expr: Box::new(expr.monomorphize(type_bindings)),
-                span: *span,
+                expr: Box::new(expr.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::UnsafeBlock { statements, span } => Expr::UnsafeBlock {
-                statements: statements.iter().map(|s| s.monomorphize(type_bindings)).collect(),
-                span: *span,
+                statements: statements.iter().map(|s| s.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
-            Expr::Try(expr, span) => Expr::Try(Box::new(expr.monomorphize(type_bindings)), *span),
+            Expr::Try(expr, span) => Expr::Try(Box::new(expr.monomorphize(type_bindings, id)), span.with_id(id)),
             Expr::Index { object, index, span } => Expr::Index {
-                object: Box::new(object.monomorphize(type_bindings)),
-                index: Box::new(index.monomorphize(type_bindings)),
-                span: *span,
+                object: Box::new(object.monomorphize(type_bindings, id)),
+                index: Box::new(index.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::FieldAccess { object, field_name, span } => Expr::FieldAccess {
-                object: Box::new(object.monomorphize(type_bindings)),
+                object: Box::new(object.monomorphize(type_bindings, id)),
                 field_name: field_name.clone(),
-                span: *span,
+                span: span.with_id(id),
             },
             Expr::FieldAssign { object, field_name, value, span } => Expr::FieldAssign {
-                object: Box::new(object.monomorphize(type_bindings)),
+                object: Box::new(object.monomorphize(type_bindings, id)),
                 field_name: field_name.clone(),
-                value: Box::new(value.monomorphize(type_bindings)),
-                span: *span,
+                value: Box::new(value.monomorphize(type_bindings, id)),
+                span: span.with_id(id),
             },
             Expr::ArrayInit { elements, span } => Expr::ArrayInit {
-                elements: elements.iter().map(|e| e.monomorphize(type_bindings)).collect(),
-                span: *span,
+                elements: elements.iter().map(|e| e.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             Expr::MethodCall { object, method_name, arguments, span } => Expr::MethodCall {
-                object: Box::new(object.monomorphize(type_bindings)),
+                object: Box::new(object.monomorphize(type_bindings, id)),
                 method_name: method_name.clone(),
-                arguments: arguments.iter().map(|a| a.monomorphize(type_bindings)).collect(),
-                span: *span,
+                arguments: arguments.iter().map(|a| a.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             _ => self.clone(),
         }
@@ -670,17 +670,17 @@ impl Expr {
 }
 
 impl Stmt {
-    pub fn monomorphize(&self, type_bindings: &std::collections::HashMap<String, Type>) -> Stmt {
+    pub fn monomorphize(&self, type_bindings: &std::collections::HashMap<String, Type>, id: u32) -> Stmt {
         match self {
             Stmt::Let { name, mutable, type_annotation, initializer, span } => Stmt::Let {
                 name: name.clone(),
                 mutable: *mutable,
                 type_annotation: type_annotation.as_ref().map(|t| t.substitute_types(type_bindings)),
-                initializer: initializer.monomorphize(type_bindings),
-                span: *span,
+                initializer: initializer.monomorphize(type_bindings, id),
+                span: span.with_id(id),
             },
-            Stmt::Expr(expr) => Stmt::Expr(expr.monomorphize(type_bindings)),
-            Stmt::Print(expr, span) => Stmt::Print(expr.monomorphize(type_bindings), *span),
+            Stmt::Expr(expr) => Stmt::Expr(expr.monomorphize(type_bindings, id)),
+            Stmt::Print(expr, span) => Stmt::Print(expr.monomorphize(type_bindings, id), span.with_id(id)),
             Stmt::Function { name, type_params: _, parameters, return_type, is_async, body, span, doc_comment, attributes } => Stmt::Function {
                 name: name.clone(), // will be renamed by caller if needed
                 type_params: vec![], // Monomorphized functions have no generic parameters!
@@ -691,27 +691,27 @@ impl Stmt {
                 }).collect(),
                 return_type: return_type.substitute_types(type_bindings),
                 is_async: *is_async,
-                body: body.monomorphize(type_bindings),
-                span: *span,
+                body: body.monomorphize(type_bindings, id),
+                span: span.with_id(id),
                 doc_comment: doc_comment.clone(),
                 attributes: attributes.clone(),
             },
             Stmt::While { condition, body, span } => Stmt::While {
-                condition: condition.monomorphize(type_bindings),
-                body: body.monomorphize(type_bindings),
-                span: *span,
+                condition: condition.monomorphize(type_bindings, id),
+                body: body.monomorphize(type_bindings, id),
+                span: span.with_id(id),
             },
             Stmt::For { iterator, iterable, body, span } => Stmt::For {
                 iterator: iterator.clone(),
-                iterable: iterable.monomorphize(type_bindings),
-                body: body.monomorphize(type_bindings),
-                span: *span,
+                iterable: iterable.monomorphize(type_bindings, id),
+                body: body.monomorphize(type_bindings, id),
+                span: span.with_id(id),
             },
             Stmt::MacroDef { name, parameters, body, span } => Stmt::MacroDef {
                 name: name.clone(),
                 parameters: parameters.clone(),
-                body: body.monomorphize(type_bindings),
-                span: *span,
+                body: body.monomorphize(type_bindings, id),
+                span: span.with_id(id),
             },
             Stmt::StructDef { name, type_params: _, fields, span } => Stmt::StructDef {
                 name: name.clone(),
@@ -721,7 +721,7 @@ impl Stmt {
                     ty: p.ty.substitute_types(type_bindings),
                     span: p.span,
                 }).collect(),
-                span: *span,
+                span: span.with_id(id),
             },
             Stmt::EnumDef { name, type_params: _, variants, span } => Stmt::EnumDef {
                 name: name.clone(),
@@ -730,28 +730,28 @@ impl Stmt {
                     n.clone(),
                     ts.iter().map(|t| t.substitute_types(type_bindings)).collect()
                 )).collect(),
-                span: *span,
+                span: span.with_id(id),
             },
             Stmt::ExternBlock { functions, span } => Stmt::ExternBlock {
-                functions: functions.iter().map(|f| f.monomorphize(type_bindings)).collect(),
-                span: *span,
+                functions: functions.iter().map(|f| f.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             Stmt::Return(expr_opt, span) => Stmt::Return(
-                expr_opt.as_ref().map(|e| e.monomorphize(type_bindings)),
+                expr_opt.as_ref().map(|e| e.monomorphize(type_bindings, id)),
                 *span,
             ),
             Stmt::Impl { trait_name, target_name, type_params: _, methods, span } => Stmt::Impl {
                 trait_name: trait_name.clone(),
                 target_name: target_name.clone(), // will be renamed during monomorphization if generic
                 type_params: vec![],
-                methods: methods.iter().map(|m| m.monomorphize(type_bindings)).collect(),
-                span: *span,
+                methods: methods.iter().map(|m| m.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             Stmt::TraitDef { name, type_params: _, methods, span } => Stmt::TraitDef {
                 name: name.clone(),
                 type_params: vec![],
-                methods: methods.iter().map(|m| m.monomorphize(type_bindings)).collect(),
-                span: *span,
+                methods: methods.iter().map(|m| m.monomorphize(type_bindings, id)).collect(),
+                span: span.with_id(id),
             },
             _ => self.clone(),
         }
