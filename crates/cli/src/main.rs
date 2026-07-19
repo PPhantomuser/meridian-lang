@@ -459,6 +459,10 @@ void print_i64(int64_t val) {
     printf("%lld\n", (long long)val);
 }
 
+void print_str(const char* val) {
+    printf("%s\n", val);
+}
+
 int main(int argc, char** argv) {
     extern int meridian_main();
     return meridian_main();

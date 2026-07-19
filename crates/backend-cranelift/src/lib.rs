@@ -9,7 +9,7 @@ use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{default_libcall_names, Linkage, Module, FuncId};
-use meridian_ir::{Chunk, ConstValue, Opcode, ProgramIR};
+use meridian_ir::{Chunk, ConstValue, Opcode, ProgramIR, PrintType};
 use std::collections::HashMap;
 
 pub mod aot;
@@ -203,6 +203,15 @@ impl JITCompiler {
                     let val = builder.use_var(Variable::new(*src));
                     builder.def_var(Variable::new(*dest), val);
                 }
+                Opcode::Neg(dest, src, is_float) => {
+                    let val = builder.use_var(Variable::new(*src));
+                    let res = if *is_float {
+                        builder.ins().fneg(val)
+                    } else {
+                        builder.ins().ineg(val)
+                    };
+                    builder.def_var(Variable::new(*dest), res);
+                }
                 Opcode::Add(dest, left, right, _) => {
                     let l = builder.use_var(Variable::new(*left));
                     let r = builder.use_var(Variable::new(*right));
@@ -301,14 +310,17 @@ impl JITCompiler {
                     builder.ins().jump(target_block, &[]);
                     block_terminated = true;
                 }
-                Opcode::Print(src, is_float) => {
+                Opcode::Print(src, print_type) => {
                     let val = builder.use_var(Variable::new(*src));
-                    if *is_float {
-                        let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
-                        builder.ins().call(local_print, &[val]);
-                    } else {
-                        let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
-                        builder.ins().call(local_print_i64, &[val]);
+                    match print_type {
+                        PrintType::Float => {
+                            let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
+                            builder.ins().call(local_print, &[val]);
+                        }
+                        _ => {
+                            let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
+                            builder.ins().call(local_print_i64, &[val]);
+                        }
                     }
                 }
                 Opcode::Call(dest, func_name, arg_start, arg_count) => {

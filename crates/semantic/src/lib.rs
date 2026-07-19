@@ -943,8 +943,31 @@ impl SemanticAnalyzer {
     fn analyze_expression_inner(&mut self, expr: &Expr) -> Type {
         match expr {
             Expr::Number(_, _) => Type::Number,
+            Expr::Int(_, _) => Type::Int,
             Expr::String(_, _) => Type::String,
             Expr::Bool(_, _) => Type::Bool,
+            Expr::Unary { operator, operand, span } => {
+                let operand_ty = self.analyze_expression(operand);
+                if operand_ty == Type::Error || operand_ty == Type::Unknown {
+                    return operand_ty;
+                }
+                match operator {
+                    meridian_ast::UnaryOperator::Minus => {
+                        if operand_ty == Type::Number || operand_ty == Type::Int {
+                            operand_ty
+                        } else {
+                            self.diagnostics.push(Diagnostic::new(
+                                format!("Cannot apply unary minus to type {:?}", operand_ty),
+                                "MER0157".to_string(),
+                                *span,
+                                DiagnosticCategory::Type,
+                                None,
+                            ));
+                            Type::Error
+                        }
+                    }
+                }
+            }
             Expr::Identifier(name, span) => {
                 if let Some(info) = self.lookup_variable(name) {
                     if info.borrows.contains(&BorrowKind::Exclusive) {
@@ -1682,7 +1705,6 @@ impl SemanticAnalyzer {
                 self.in_unsafe_block = prev_unsafe;
                 block_type
             }
-            Expr::Int(_, _) => Type::Int,
             Expr::FieldAccess { object, field_name, span } => {
                 let mut obj_ty = self.analyze_expression(object);
                 while let Type::Reference(inner, _) = obj_ty {

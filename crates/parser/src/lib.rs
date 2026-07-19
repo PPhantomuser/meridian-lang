@@ -1604,6 +1604,17 @@ impl<'a> Parser<'a> {
 
     fn parse_expression_impl(&mut self, precedence: u8, allow_struct: bool) -> Option<Expr> {
         let mut left = match self.current_token.kind {
+            TokenKind::Minus => {
+                let start_span = self.current_token.span;
+                self.advance();
+                let expr = self.parse_expression_impl(25, allow_struct)?;
+                let end_span = expr.span();
+                Expr::Unary {
+                    operator: meridian_ast::UnaryOperator::Minus,
+                    operand: Box::new(expr),
+                    span: Span::new(start_span.start, end_span.end),
+                }
+            }
             TokenKind::Ampersand => {
                 let start_span = self.current_token.span;
                 self.advance();

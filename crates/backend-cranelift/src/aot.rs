@@ -9,8 +9,8 @@ use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cranelift_module::{default_libcall_names, Linkage, Module, FuncId};
-use meridian_ir::{Chunk, ConstValue, Opcode, ProgramIR};
+use cranelift_module::{default_libcall_names, Linkage, Module, FuncId, DataId, DataDescription};
+use meridian_ir::{Chunk, ConstValue, Opcode, ProgramIR, PrintType};
 use std::collections::HashMap;
 
 pub struct AOTCompiler {
@@ -20,7 +20,9 @@ pub struct AOTCompiler {
     functions: HashMap<String, FuncId>,
     print_func_id: FuncId,
     print_i64_func_id: FuncId,
+    print_str_func_id: FuncId,
     malloc_func_id: FuncId,
+    string_counter: usize,
 }
 
 impl Default for AOTCompiler {
@@ -68,6 +70,11 @@ impl AOTCompiler {
         let malloc_func_id = module
             .declare_function("malloc", Linkage::Import, &malloc_sig)
             .unwrap();
+        let mut print_str_sig = module.make_signature();
+        print_str_sig.params.push(AbiParam::new(types::I64)); // pointer to char
+        let print_str_func_id = module
+            .declare_function("print_str", Linkage::Import, &print_str_sig)
+            .unwrap();
 
         let ctx = module.make_context();
 
@@ -78,7 +85,9 @@ impl AOTCompiler {
             functions: HashMap::new(),
             print_func_id,
             print_i64_func_id,
+            print_str_func_id,
             malloc_func_id,
+            string_counter: 0,
         }
     }
 
@@ -188,6 +197,22 @@ impl AOTCompiler {
                             let f = builder.ins().f64const(if *b { 1.0 } else { 0.0 });
                             builder.ins().bitcast(types::I64, MemFlags::new(), f)
                         }
+                        ConstValue::String(s) => {
+                            let mut data_ctx = DataDescription::new();
+                            let mut c_str = s.clone().into_bytes();
+                            c_str.push(0); // null terminator
+                            data_ctx.define(c_str.into_boxed_slice());
+                            self.string_counter += 1;
+                            let data_id = self.module.declare_data(
+                                &format!("str_{}", self.string_counter),
+                                Linkage::Local,
+                                false,
+                                false,
+                            ).unwrap();
+                            self.module.define_data(data_id, &data_ctx).unwrap();
+                            let local_id = self.module.declare_data_in_func(data_id, builder.func);
+                            builder.ins().symbol_value(types::I64, local_id)
+                        }
                         _ => builder.ins().iconst(types::I64, 0),
                     };
                     builder.ins().stack_store(val_i64, slots[*dest], 0);
@@ -195,6 +220,18 @@ impl AOTCompiler {
                 Opcode::Move(dest, src) => {
                     let val_i64 = builder.ins().stack_load(types::I64, slots[*src], 0);
                     builder.ins().stack_store(val_i64, slots[*dest], 0);
+                }
+                Opcode::Neg(dest, src, is_float) => {
+                    let val_i64 = builder.ins().stack_load(types::I64, slots[*src], 0);
+                    if *is_float {
+                        let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
+                        let res = builder.ins().fneg(val);
+                        let res_i64 = builder.ins().bitcast(types::I64, MemFlags::new(), res);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    } else {
+                        let res_i64 = builder.ins().ineg(val_i64);
+                        builder.ins().stack_store(res_i64, slots[*dest], 0);
+                    }
                 }
                 Opcode::Add(dest, left, right, is_float) => {
                     let l_i64 = builder.ins().stack_load(types::I64, slots[*left], 0);
@@ -224,15 +261,22 @@ impl AOTCompiler {
                         builder.ins().stack_store(res_i64, slots[*dest], 0);
                     }
                 }
-                Opcode::Print(src, is_float) => {
+                Opcode::Print(src, print_type) => {
                     let val_i64 = builder.ins().stack_load(types::I64, slots[*src], 0);
-                    if *is_float {
-                        let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
-                        let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
-                        builder.ins().call(local_print, &[val]);
-                    } else {
-                        let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
-                        builder.ins().call(local_print_i64, &[val_i64]);
+                    match print_type {
+                        PrintType::Float => {
+                            let val = builder.ins().bitcast(types::F64, MemFlags::new(), val_i64);
+                            let local_print = self.module.declare_func_in_func(self.print_func_id, builder.func);
+                            builder.ins().call(local_print, &[val]);
+                        }
+                        PrintType::Int | PrintType::Bool => {
+                            let local_print_i64 = self.module.declare_func_in_func(self.print_i64_func_id, builder.func);
+                            builder.ins().call(local_print_i64, &[val_i64]);
+                        }
+                        PrintType::String => {
+                            let local_print_str = self.module.declare_func_in_func(self.print_str_func_id, builder.func);
+                            builder.ins().call(local_print_str, &[val_i64]);
+                        }
                     }
                 }
                 Opcode::JumpIfFalse(cond_reg, offset) => {

@@ -5,6 +5,14 @@ pub type Register = usize;
 pub type ConstIndex = usize;
 pub type Offset = usize;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrintType {
+    Float,
+    Int,
+    String,
+    Bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     LoadConst(Register, ConstIndex),   // dest, const_idx
@@ -23,7 +31,7 @@ pub enum Opcode {
     Jump(Offset),                      // target_offset
     Call(Register, String, Register, usize), // dest, function_name, arg_start_reg, arg_count
     Return(Register),                  // src
-    Print(Register, bool),             // src, is_float
+    Print(Register, PrintType),             // src, print_type
     Borrow(Register, Register),        // dest, src_reg
     Dereference(Register, Register),   // dest, src_reg
     AsyncCall(Register, String, Register, usize), // dest, func, arg_start, count
@@ -39,6 +47,7 @@ pub enum Opcode {
     CheckEnum(Register, Register, usize), // dest, obj, variant_idx
     ExtractEnum(Register, Register, usize), // dest_start, obj (gets inner values), count
     TryUnwrap(Register, Register),     // dest, src (unwraps Ok, returns if Err)
+    Neg(Register, Register, bool),     // dest, src, is_float
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -211,13 +220,19 @@ impl Compiler {
                 self.locals.insert(name.clone(), val_reg);
             }
             Stmt::Print(expr, _) => {
-                let is_float = if let Some(ty) = self.type_map.get(&expr.span()) {
-                    matches!(ty, Type::Number)
+                let print_type = if let Some(ty) = self.type_map.get(&expr.span()) {
+                    match ty {
+                        Type::Number => PrintType::Float,
+                        Type::Int => PrintType::Int,
+                        Type::String => PrintType::String,
+                        Type::Bool => PrintType::Bool,
+                        _ => PrintType::Float, // Fallback
+                    }
                 } else {
-                    true
+                    PrintType::Float
                 };
                 let reg = self.compile_expr(expr);
-                self.current_chunk.instructions.push(Opcode::Print(reg, is_float));
+                self.current_chunk.instructions.push(Opcode::Print(reg, print_type));
             }
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
@@ -349,6 +364,21 @@ impl Compiler {
             }
             Expr::Identifier(name, _) => {
                 *self.locals.get(name).unwrap()
+            }
+            Expr::Unary { operator, operand, span } => {
+                let src = self.compile_expr(operand);
+                let dest = self.alloc_reg();
+                let is_float = if let Some(ty) = self.type_map.get(span) {
+                    *ty == meridian_ast::Type::Number
+                } else {
+                    false // default to false or rely on checker
+                };
+                match operator {
+                    meridian_ast::UnaryOperator::Minus => {
+                        self.current_chunk.instructions.push(Opcode::Neg(dest, src, is_float));
+                    }
+                }
+                dest
             }
             Expr::Binary { left, operator, right, span } => {
                 let left_reg = self.compile_expr(left);

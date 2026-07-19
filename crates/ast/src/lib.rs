@@ -194,6 +194,11 @@ pub enum Expr {
     String(String, Span),
     Bool(bool, Span),
     Identifier(String, Span),
+    Unary {
+        operator: UnaryOperator,
+        operand: Box<Expr>,
+        span: Span,
+    },
     Binary {
         left: Box<Expr>,
         operator: BinaryOperator,
@@ -310,6 +315,7 @@ impl Expr {
             Expr::String(_, span) => *span,
             Expr::Bool(_, span) => *span,
             Expr::Identifier(_, span) => *span,
+            Expr::Unary { span, .. } => *span,
             Expr::Binary { span, .. } => *span,
             Expr::If { span, .. } => *span,
             Expr::Assign { span, .. } => *span,
@@ -519,6 +525,11 @@ impl Stmt {
             _ => self.clone(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnaryOperator {
+    Minus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

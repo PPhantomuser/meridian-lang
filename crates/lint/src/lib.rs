@@ -145,9 +145,11 @@ impl Linter {
     fn expr_span(&self, expr: &Expr) -> Span {
         match expr {
             Expr::Number(_, s) => *s,
+            Expr::Int(_, s) => *s,
             Expr::String(_, s) => *s,
             Expr::Bool(_, s) => *s,
             Expr::Identifier(_, s) => *s,
+            Expr::Unary { span, .. } => *span,
             Expr::Binary { span, .. } => *span,
             Expr::Assign { span, .. } => *span,
             Expr::Call { span, .. } => *span,
@@ -169,7 +171,6 @@ impl Linter {
             Expr::FieldAccess { span, .. } => *span,
             Expr::FieldAssign { span, .. } => *span,
             Expr::ArrayInit { span, .. } => *span,
-            Expr::Int(_, span) => *span,
             Expr::Match { span, .. } => *span,
             Expr::EnumInit { span, .. } => *span,
             Expr::Try(_, span) => *span,

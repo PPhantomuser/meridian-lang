@@ -318,6 +318,12 @@ impl Formatter {
             Expr::String(s, _) => self.output.push_str(&format!("\"{}\"", s)),
             Expr::Bool(b, _) => self.output.push_str(if *b { "true" } else { "false" }),
             Expr::Identifier(name, _) => self.output.push_str(name),
+            Expr::Unary { operator, operand, .. } => {
+                match operator {
+                    meridian_ast::UnaryOperator::Minus => self.output.push('-'),
+                }
+                self.format_expr(operand);
+            }
             Expr::Binary { left, operator, right, .. } => {
                 self.format_expr(left);
                 self.output.push(' ');

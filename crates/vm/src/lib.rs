@@ -267,6 +267,18 @@ impl VM {
                         Opcode::Move(dest, src) => {
                             task.registers[base + dest] = task.registers[base + src].clone();
                         }
+                        Opcode::Neg(dest, src, _) => {
+                            if let Value::Number(v) = &task.registers[base + src] {
+                                task.registers[base + dest] = Value::Number(-v);
+                            } else if let Value::Int(v) = &task.registers[base + src] {
+                                task.registers[base + dest] = Value::Int(-v);
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "Invalid type for negation".to_string(),
+                                    stack_trace: self.generate_stack_trace(&task, &frame),
+                                });
+                            }
+                        }
                         Opcode::Add(dest, left, right, _) => {
                             if let (Value::Number(l), Value::Number(r)) = (&task.registers[base + left], &task.registers[base + right]) {
                                 task.registers[base + dest] = Value::Number(l + r);
