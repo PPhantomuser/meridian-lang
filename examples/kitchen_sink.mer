@@ -1,0 +1,22 @@
+
+
+trait Drawable { fn draw(self) -> String; }
+struct Point { x: Number, y: Number }
+impl Drawable for Point { fn draw(self) -> String { "Point" } }
+
+struct Line { p1: Point, p2: Point }
+impl Drawable for Line { fn draw(self) -> String { "Line" } }
+
+fn render<Item: Drawable>(item: Item) -> Result<String, String> {
+    Result::Ok(item.draw())
+}
+
+fn main() {
+    let p = Point { x: 1.0, y: 2.0 };
+    let l = Line { p1: p, p2: Point { x: 3.0, y: 4.0 } };
+    
+    // Arrays + Generics + Traits + Result
+    let arr = [render(p), render(l)];
+    print arr[0];
+    print arr[1];
+}

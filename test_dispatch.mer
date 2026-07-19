@@ -1,0 +1,13 @@
+trait Shape { fn area(self) -> Number; }
+struct Circle { radius: Number }
+struct Square { side: Number }
+impl Shape for Circle { fn area(self) -> Number { 3.14159 * self.radius * self.radius } }
+impl Shape for Square { fn area(self) -> Number { self.side * self.side } }
+fn totalArea<T: Shape>(s: T) -> Number { s.area() }
+
+fn main() {
+    let c = Circle { radius: 2.0 };
+    print totalArea(c);       // should be 12.56636
+    let sq = Square { side: 3.0 };
+    print totalArea(sq);      // should be 9
+}
