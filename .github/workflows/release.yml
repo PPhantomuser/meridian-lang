@@ -61,10 +61,10 @@ jobs:
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} ./${{ matrix.asset_name }} --clobber
+        run: gh release upload ${{ github.event.release.tag_name }} ./${{ matrix.asset_name }} --clobber --repo ${{ github.repository }}
         
       - name: Upload to Release (Workflow Dispatch)
         if: github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.inputs.tag }} ./${{ matrix.asset_name }} --clobber
+        run: gh release upload ${{ github.event.inputs.tag }} ./${{ matrix.asset_name }} --clobber --repo ${{ github.repository }}
