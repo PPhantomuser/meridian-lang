@@ -5,7 +5,7 @@ use std::process::Command;
 fn test_immutable_error() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/immutable_error.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/immutable_error.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -18,7 +18,7 @@ fn test_immutable_error() {
 fn test_type_error() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/type_error.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/type_error.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -31,7 +31,7 @@ fn test_type_error() {
 fn test_valid_semantics() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/valid_semantics.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/valid_semantics.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -42,7 +42,7 @@ fn test_valid_semantics() {
 fn test_func_arg_error() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/func_arg_error.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/func_arg_error.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -55,7 +55,7 @@ fn test_func_arg_error() {
 fn test_func_return_error() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/func_return_error.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/func_return_error.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -68,7 +68,7 @@ fn test_func_return_error() {
 fn test_fibonacci() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/fibonacci.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "examples/fibonacci.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -80,7 +80,7 @@ fn test_fibonacci() {
 fn test_macros() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/macros.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "examples/macros.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -94,7 +94,7 @@ fn test_macros() {
 fn test_modules() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/main.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "examples/main.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -107,7 +107,7 @@ fn test_modules() {
 fn test_cyclic_imports() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/cycle_a.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/cycle_a.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -120,7 +120,7 @@ fn test_cyclic_imports() {
 fn test_borrow_mut_immut() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/borrow_mut_immut.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/borrow_mut_immut.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -133,7 +133,7 @@ fn test_borrow_mut_immut() {
 fn test_borrow_mut_mut() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/borrow_mut_mut.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/borrow_mut_mut.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -146,7 +146,7 @@ fn test_borrow_mut_mut() {
 fn test_borrow_elision_fail() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/borrow_elision_fail.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/borrow_elision_fail.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -160,7 +160,7 @@ fn test_borrow_elision_fail() {
 fn test_async_await() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/async_await.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "examples/async_await.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -176,7 +176,7 @@ fn test_async_await() {
 fn test_result_option_regression() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "check", "examples/result_option_test.mer"])
+        .args(["run", "--bin", "meridian", "--", "check", "examples/result_option_test.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -187,7 +187,7 @@ fn test_result_option_regression() {
 fn test_kitchen_sink() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "examples/kitchen_sink.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "examples/kitchen_sink.mer"])
         .output()
         .expect("Failed to execute command");
     
@@ -201,7 +201,7 @@ fn test_kitchen_sink() {
 fn test_generic_trait_dispatch() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "run", "test_dispatch.mer"])
+        .args(["run", "--bin", "meridian", "--", "run", "test_dispatch.mer"])
         .output()
         .expect("Failed to execute command");
     

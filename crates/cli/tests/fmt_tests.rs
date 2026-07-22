@@ -12,7 +12,7 @@ print  add(x, 20);";
 
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap()) // point to root
-        .args(["run", "--bin", "merid", "--", "fmt", temp_file.to_str().unwrap()])
+        .args(["run", "--bin", "meridian", "--", "fmt", temp_file.to_str().unwrap()])
         .output()
         .expect("Failed to execute command");
     

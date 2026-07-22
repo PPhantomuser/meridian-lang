@@ -693,7 +693,7 @@ int main(int argc, char** argv) {
                                 if !path.ends_with("target") && !path.ends_with(".git") {
                                     dirs.push(path);
                                 }
-                            } else if path.extension().is_some_and(|ext| ext == "merid" || ext == "mr") {
+                            } else if path.extension().is_some_and(|ext| ext == "mer") {
                                 if let Some(prog) = load_module(&path, &mut visited, &mut diagnostics, None) {
                                     test_programs.push(prog);
                                 }

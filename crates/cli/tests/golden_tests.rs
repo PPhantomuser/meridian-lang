@@ -4,7 +4,7 @@ use std::process::Command;
 fn test_hello_ast() {
     let output = Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap().parent().unwrap().parent().unwrap())
-        .args(["run", "--bin", "merid", "--", "ast", "examples/hello.mer"])
+        .args(["run", "--bin", "meridian", "--", "ast", "examples/hello.mer"])
         .output()
         .expect("Failed to execute command");
     

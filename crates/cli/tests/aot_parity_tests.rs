@@ -14,7 +14,7 @@ fn get_project_root() -> PathBuf {
 
 fn run_meridian_vm(file_path: &Path) -> (bool, String, String) {
     let mut cmd = Command::new("cargo");
-    cmd.args(["run", "-q", "--bin", "merid", "--", "run", file_path.to_str().unwrap()]);
+    cmd.args(["run", "-q", "--bin", "meridian", "--", "run", file_path.to_str().unwrap()]);
     cmd.current_dir(get_project_root());
     
     let output = cmd.output().expect("Failed to run VM");
@@ -27,7 +27,7 @@ fn run_meridian_vm(file_path: &Path) -> (bool, String, String) {
 
 fn run_meridian_aot(file_path: &Path) -> (bool, String, String) {
     let mut build_cmd = Command::new("cargo");
-    build_cmd.args(["run", "-q", "--bin", "merid", "--", "build", file_path.to_str().unwrap()]);
+    build_cmd.args(["run", "-q", "--bin", "meridian", "--", "build", file_path.to_str().unwrap()]);
     build_cmd.current_dir(get_project_root());
     
     let build_output = build_cmd.output().expect("Failed to build AOT");
