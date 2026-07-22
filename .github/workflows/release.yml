@@ -57,14 +57,10 @@ jobs:
         run: |
           copy target\${{ matrix.target }}\release\${{ matrix.binary_name }} .\${{ matrix.asset_name }}
           
-      - name: Upload to Release
-        if: github.event_name == 'release'
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.tag }}
+          files: ./${{ matrix.asset_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} ./${{ matrix.asset_name }} --clobber --repo ${{ github.repository }}
-        
-      - name: Upload to Release (Workflow Dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.inputs.tag }} ./${{ matrix.asset_name }} --clobber --repo ${{ github.repository }}
