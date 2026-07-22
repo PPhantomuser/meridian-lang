@@ -1,0 +1,13 @@
+version = 1
+
+[[package]]
+name = "meridian-core"
+version = "0.1.0"
+source = "registry+meridian-core#9c466c6fb9427b4263b369d46d5d1f15f62be9c6"
+checksum = "9c466c6fb9427b4263b369d46d5d1f15f62be9c6"
+
+[[package]]
+name = "meridian-math"
+version = "0.1.0"
+source = "registry+meridian-math#609e47712e9d42d955481cd3b71f9d2ac894429e"
+checksum = "609e47712e9d42d955481cd3b71f9d2ac894429e"

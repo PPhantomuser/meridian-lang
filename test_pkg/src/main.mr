@@ -1,0 +1,1 @@
+import "meridian-core"; import "meridian-math"; fn main() { let opt: Option<Number> = Option::Some(42.0); print opt.is_some(); let m = Math{}; print m.abs(0.0 - 5.0); }

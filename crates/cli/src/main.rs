@@ -17,7 +17,7 @@ mod resolver;
 
 
 #[derive(ClapParser)]
-#[command(name = "merid")]
+#[command(name = "meridian")]
 #[command(about = "Meridian compiler and toolchain", long_about = None)]
 struct Cli {
     #[arg(long, global = true)]

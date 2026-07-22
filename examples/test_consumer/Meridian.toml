@@ -1,0 +1,6 @@
+[package]
+name = "test_consumer"
+version = "0.1.0"
+
+[dependencies]
+math_magic = "0.1.0"

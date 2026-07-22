@@ -1,0 +1,35 @@
+{
+  "name": "meridian-lang",
+  "displayName": "Meridian Language",
+  "description": "Official VSCode extension for the Meridian programming language.",
+  "version": "0.1.0",
+  "publisher": "meridian-lang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "icon": "icon.svg",
+  "contributes": {
+    "languages": [
+      {
+        "id": "meridian",
+        "aliases": ["Meridian", "meridian"],
+        "extensions": [".mer", ".merid", ".mr"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icon.svg",
+          "dark": "./icon.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "meridian",
+        "scopeName": "source.meridian",
+        "path": "./syntaxes/meridian.tmLanguage.json"
+      }
+    ]
+  }
+}

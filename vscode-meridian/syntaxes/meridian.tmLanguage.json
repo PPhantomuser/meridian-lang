@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Meridian",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.meridian",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.meridian",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.meridian",
+          "match": "\\b(if|else|while|for|in|break|continue|match|return|async|await|spawn)\\b"
+        },
+        {
+          "name": "keyword.declaration.meridian",
+          "match": "\\b(fn|let|mut|struct|enum|impl|trait|macro|extern|unsafe|import)\\b"
+        },
+        {
+          "name": "constant.language.meridian",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "support.function.meridian",
+          "match": "\\b(print)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.meridian",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.meridian",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.meridian",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    }
+  },
+  "scopeName": "source.meridian"
+}

@@ -1,0 +1,10 @@
+fn main() {
+    let x = 10.0;
+    let y = -x;
+    print y;
+
+    let z = -5;
+    print z;
+
+    print "This is a string literal!";
+}

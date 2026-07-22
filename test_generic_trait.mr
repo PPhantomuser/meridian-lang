@@ -1,0 +1,9 @@
+trait Shape { fn area(self) -> Number; }
+struct Square { side: Number }
+impl Shape for Square { fn area(self) -> Number { self.side * self.side } }
+fn printArea<T: Shape>(s: T) { print s.area(); }
+
+fn main() {
+    let sq = Square { side: 5.0 };
+    printArea(sq);
+}

@@ -1,0 +1,7 @@
+[package]
+name = "test_pkg"
+version = "0.1.0"
+
+[dependencies]
+meridian-core = "0.1.0"
+meridian-math = "0.1.0"

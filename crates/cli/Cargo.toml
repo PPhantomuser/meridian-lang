@@ -28,5 +28,5 @@ meridian_lint = { version = "0.1.0", path = "../lint" }
 ureq.workspace = true
 
 [[bin]]
-name = "merid"
+name = "meridian"
 path = "src/main.rs"
