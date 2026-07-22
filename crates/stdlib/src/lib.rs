@@ -477,7 +477,8 @@ pub fn register_all(vm: &mut VM) {
                             let sym_c = std::ffi::CString::new(sym.as_bytes()).unwrap();
                             match lib.get::<libloading::Symbol<unsafe extern "C" fn()>>(sym_c.as_bytes_with_nul()) {
                                 Ok(symbol) => {
-                                    let ptr = symbol.into_raw().into_raw();
+                                    let func_ptr: unsafe extern "C" fn() = **symbol;
+                                    let ptr = func_ptr as usize as *mut std::ffi::c_void;
                                     let func = FFIFunction {
                                         ptr,
                                         signature: sig.clone(),
