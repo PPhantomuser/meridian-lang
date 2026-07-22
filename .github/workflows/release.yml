@@ -46,16 +46,13 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
       
-      - name: Rename Asset (Unix)
-        if: runner.os != 'Windows'
+      - name: Rename Asset
+        shell: bash
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} ./${{ matrix.asset_name }}
-          chmod +x ./${{ matrix.asset_name }}
-          
-      - name: Rename Asset (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          copy target\${{ matrix.target }}\release\${{ matrix.binary_name }} .\${{ matrix.asset_name }}
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x ./${{ matrix.asset_name }}
+          fi
           
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
