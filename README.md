@@ -1,10 +1,13 @@
 <div align="center">
-  <h1>🏔️ Meridian</h1>
+  <img src="meridian_logo/logo.svg" alt="Meridian Logo" width="200" />
+  <h1>Meridian</h1>
   <p><strong>A compiled-first programming language designed for both human engineers and AI agents.</strong></p>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-  [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-  [![Version](https://img.shields.io/badge/version-v0.1.0-orange.svg)]()
+  [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/PPhantomuser/meridian-lang/actions)
+  [![Version](https://img.shields.io/badge/version-v0.1.0-orange.svg)](https://github.com/PPhantomuser/meridian-lang/releases)
+
+  **[🌐 Visit Website](https://meridian-lang.vercel.app)**
 </div>
 
 ---
